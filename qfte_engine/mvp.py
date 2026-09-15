@@ -1,8 +1,7 @@
 """
 qfte_engine/mvp.py
 ------------------
-Moteur d'analyse MVP — QFTE V23.0 (simplifié)
-+ Filtres de discipline V23.0
+Moteur QFTE V23.0 - MVP avec ajustements contextuels + HT + global.
 """
 
 import math
@@ -15,12 +14,6 @@ def poisson_pmf(k, lam):
     if lam <= 0:
         lam = 0.01
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
-
-
-def compute_lambdas(home_bp, home_bc, away_bp, away_bc):
-    lambda_home = max((home_bp + away_bc) / 2.0, 0.1)
-    lambda_away = max((away_bp + home_bc) / 2.0, 0.1)
-    return lambda_home, lambda_away
 
 
 def compute_score_matrix(lambda_home, lambda_away, max_goals=8):
@@ -47,7 +40,132 @@ def compute_1x2(matrix):
 
 
 # =========================================================
-# 2. EV
+# 2. MOYENNES
+# =========================================================
+def moy(valeurs):
+    v = [x for x in valeurs if x is not None]
+    if not v:
+        return 0.0
+    return sum(v) / len(v)
+
+
+# =========================================================
+# 3. AJUSTEMENTS CONTEXTUELS
+# =========================================================
+def facteur_meteo(meteo):
+    return {
+        "normale": 1.00,
+        "pluie": 0.90,
+        "neige": 0.85,
+        "chaleur_extreme": 0.90,
+        "vent_fort": 0.92,
+    }.get(meteo, 1.00)
+
+
+def facteur_enjeu(enjeu):
+    return {
+        "normal": 1.00,
+        "derby": 0.95,
+        "finale": 0.92,
+        "fin_saison": 0.97,
+        "relegation": 0.95,
+    }.get(enjeu, 1.00)
+
+
+def facteur_blessures(a_blessures):
+    return 0.85 if a_blessures else 1.00
+
+
+def facteur_ht(matchs):
+    """
+    Analyse les HT pour détecter le profil de l'équipe.
+    - Si l'équipe marque bcp en 2e MT → bonus (slow starter)
+    - Si elle marque bcp en 1re MT → neutre
+    Retourne un facteur entre 0.95 et 1.05.
+    """
+    matchs_avec_ht = [m for m in matchs if m.get("ht_bp") is not None]
+    if not matchs_avec_ht:
+        return 1.00
+
+    total_bp = sum(m["bp"] for m in matchs_avec_ht)
+    total_ht_bp = sum(m["ht_bp"] for m in matchs_avec_ht)
+
+    if total_bp == 0:
+        return 1.00
+
+    ratio_2e_mt = (total_bp - total_ht_bp) / total_bp  # > 0.5 = finit fort
+
+    # Écart autour de 0.5, plafonné à ±5%
+    ecart = (ratio_2e_mt - 0.5) * 0.20
+    ecart = max(min(ecart, 0.05), -0.05)
+    return 1.00 + ecart
+
+
+# =========================================================
+# 4. CALCUL DES LAMBDAS AMÉLIORÉ
+# =========================================================
+def compute_lambdas(
+    home_ctx, home_glob, away_ctx, away_glob,
+    meteo, enjeu, blessures_dom, blessures_ext
+):
+    # Moyennes contextuelles
+    home_bp_ctx = moy([m["bp"] for m in home_ctx])
+    home_bc_ctx = moy([m["bc"] for m in home_ctx])
+    away_bp_ctx = moy([m["bp"] for m in away_ctx])
+    away_bc_ctx = moy([m["bc"] for m in away_ctx])
+
+    # Moyennes globales (fallback si vide)
+    home_bp_glob = moy([m["bp"] for m in home_glob]) if home_glob else home_bp_ctx
+    home_bc_glob = moy([m["bc"] for m in home_glob]) if home_glob else home_bc_ctx
+    away_bp_glob = moy([m["bp"] for m in away_glob]) if away_glob else away_bp_ctx
+    away_bc_glob = moy([m["bc"] for m in away_glob]) if away_glob else away_bc_ctx
+
+    # Fusion 70% contexte / 30% global
+    home_bp = 0.7 * home_bp_ctx + 0.3 * home_bp_glob
+    home_bc = 0.7 * home_bc_ctx + 0.3 * home_bc_glob
+    away_bp = 0.7 * away_bp_ctx + 0.3 * away_bp_glob
+    away_bc = 0.7 * away_bc_ctx + 0.3 * away_bc_glob
+
+    # λ de base
+    lambda_home = (home_bp + away_bc) / 2.0
+    lambda_away = (away_bp + home_bc) / 2.0
+
+    # Ajustement HT (profil de chaque équipe)
+    f_ht_home = facteur_ht(home_ctx)
+    f_ht_away = facteur_ht(away_ctx)
+    lambda_home *= f_ht_home
+    lambda_away *= f_ht_away
+
+    # Ajustement météo + enjeu (sur les 2 équipes)
+    f_commun = facteur_meteo(meteo) * facteur_enjeu(enjeu)
+    lambda_home *= f_commun
+    lambda_away *= f_commun
+
+    # Ajustement blessures (individuel)
+    lambda_home *= facteur_blessures(blessures_dom)
+    lambda_away *= facteur_blessures(blessures_ext)
+
+    # Sécurité
+    lambda_home = max(lambda_home, 0.1)
+    lambda_away = max(lambda_away, 0.1)
+
+    return lambda_home, lambda_away, {
+        "home_bp_ctx": round(home_bp_ctx, 2),
+        "home_bp_glob": round(home_bp_glob, 2),
+        "away_bp_ctx": round(away_bp_ctx, 2),
+        "away_bp_glob": round(away_bp_glob, 2),
+        "f_ht_home": round(f_ht_home, 3),
+        "f_ht_away": round(f_ht_away, 3),
+        "f_meteo": round(facteur_meteo(meteo), 3),
+        "f_enjeu": round(facteur_enjeu(enjeu), 3),
+        "f_bless_dom": facteur_blessures(blessures_dom),
+        "f_bless_ext": facteur_blessures(blessures_ext),
+        "f_commun": round(f_commun, 3),
+    }
+
+
+# =========================================================
+# 5. EV + FIABILITÉ + STAKE
 # =========================================================
 def compute_ev(p, cote):
     if cote <= 0:
@@ -55,9 +173,6 @@ def compute_ev(p, cote):
     return p * cote - 1.0
 
 
-# =========================================================
-# 3. FIABILITÉ
-# =========================================================
 def compute_reliability(p, cote, ev):
     f_proba = p
     f_value = 0.0 if ev < 0 else min(ev / 0.15, 1.0)
@@ -71,70 +186,41 @@ def compute_reliability(p, cote, ev):
     return round(min(max(fiabilite, 0.0), 1.0), 3)
 
 
-# =========================================================
-# 4. KELLY FRACTIONNÉ
-# =========================================================
 def compute_stake(p, cote, fiabilite, ev):
-    """
-    Kelly fractionné adaptatif (QFTE V23.0).
-    Retourne le stake en % de bankroll (0 si pas de pari).
-    """
     if ev <= 0 or cote <= 1:
         return 0.0
-
-    # Kelly plein
     f_star = (p * cote - 1.0) / (cote - 1.0)
-
-    # λ selon le niveau de fiabilité
     if fiabilite >= 0.85:
-        lam = 0.30
-        plafond = 1.5
+        lam, plafond = 0.30, 1.5
     elif fiabilite >= 0.75:
-        lam = 0.25
-        plafond = 1.0
+        lam, plafond = 0.25, 1.0
     elif fiabilite >= 0.65:
-        lam = 0.15
-        plafond = 0.5
+        lam, plafond = 0.15, 0.5
     else:
-        lam = 0.10
-        plafond = 0.25
-
-    stake = f_star * lam * 100  # en %
-    stake = min(stake, plafond)
-    stake = max(stake, 0.0)
-    return round(stake, 2)
+        lam, plafond = 0.10, 0.25
+    stake = min(f_star * lam * 100, plafond)
+    return round(max(stake, 0.0), 2)
 
 
 # =========================================================
-# 5. FILTRES DE DISCIPLINE V23.0
+# 6. FILTRES + CLASSIFICATION
 # =========================================================
 SEUIL_FIABILITE = 0.75
-SEUIL_VALUE_1X2 = 0.05   # 5% pour 1X2
+SEUIL_VALUE_1X2 = 0.05
 SEUIL_CONFIANCE = 0.70
 
 
 def appliquer_filtres_discipline(p, cote, ev, fiabilite):
-    """
-    Vérifie les filtres obligatoires V23.0.
-    Retourne (passe: bool, raisons_rejet: list)
-    """
     raisons = []
-
     if fiabilite < SEUIL_FIABILITE:
         raisons.append(f"Fiabilité {fiabilite} < {SEUIL_FIABILITE}")
-
     if ev < SEUIL_VALUE_1X2:
         raisons.append(f"Value {ev*100:.2f}% < {SEUIL_VALUE_1X2*100:.0f}%")
-
     if p < SEUIL_CONFIANCE:
         raisons.append(f"Confiance {p*100:.2f}% < {SEUIL_CONFIANCE*100:.0f}%")
-
     return (len(raisons) == 0, raisons)
 
 
-# =========================================================
-# 6. CLASSIFICATION
-# =========================================================
 def classify_decision(fiabilite, ev):
     if fiabilite >= 0.85 and ev >= SEUIL_VALUE_1X2:
         return "🔥 ATTAQUE FORTE", "ELITE"
@@ -149,14 +235,20 @@ def classify_decision(fiabilite, ev):
 
 
 # =========================================================
-# 7. ANALYSE COMPLÈTE FOOTBALL
+# 7. ANALYSE COMPLÈTE
 # =========================================================
 def analyser_match_football(
-    home_bp, home_bc, away_bp, away_bc,
+    home_ctx, home_glob, away_ctx, away_glob,
     open_1, open_x, open_2,
-    curr_1, curr_x, curr_2
+    curr_1, curr_x, curr_2,
+    meteo="normale", enjeu="normal",
+    blessures_dom=False, blessures_ext=False
 ):
-    lambda_home, lambda_away = compute_lambdas(home_bp, home_bc, away_bp, away_bc)
+    lambda_home, lambda_away, details = compute_lambdas(
+        home_ctx, home_glob, away_ctx, away_glob,
+        meteo, enjeu, blessures_dom, blessures_ext
+    )
+
     matrix = compute_score_matrix(lambda_home, lambda_away)
     p1, px, p2 = compute_1x2(matrix)
 
@@ -168,14 +260,12 @@ def analyser_match_football(
     fx = compute_reliability(px, curr_x, evx) if curr_x > 0 else 0.0
     f2 = compute_reliability(p2, curr_2, ev2)
 
-    # Construction des 3 candidats
     candidats = [
         {"selection": "1 (Domicile)",  "p": p1, "cote": curr_1, "ev": ev1, "fiabilite": f1},
         {"selection": "X (Nul)",       "p": px, "cote": curr_x, "ev": evx, "fiabilite": fx},
         {"selection": "2 (Extérieur)", "p": p2, "cote": curr_2, "ev": ev2, "fiabilite": f2},
     ]
 
-    # Appliquer les filtres
     for c in candidats:
         passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
         c["passe_filtres"] = passe
@@ -185,17 +275,14 @@ def analyser_match_football(
         c["niveau"] = niv
         c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
 
-    # Trier par fiabilité
     candidats.sort(key=lambda x: x["fiabilite"], reverse=True)
 
-    # Règle de corrélation : UN SEUL pari retenu (le meilleur qui passe les filtres)
     pari_retenu = None
     for c in candidats:
         if c["passe_filtres"] and c["stake"] > 0:
             pari_retenu = c
             break
 
-    # Top 3 scores
     top_scores = sorted(matrix.items(), key=lambda x: x[1], reverse=True)[:3]
     top_3 = [
         {"rank": i + 1, "score": f"{sc[0]}-{sc[1]}", "probability": round(pr, 4)}
@@ -205,6 +292,7 @@ def analyser_match_football(
     return {
         "lambda_home": round(lambda_home, 2),
         "lambda_away": round(lambda_away, 2),
+        "details": details,
         "p1": round(p1, 4), "px": round(px, 4), "p2": round(p2, 4),
         "ev1": round(ev1, 4), "evx": round(evx, 4), "ev2": round(ev2, 4),
         "f1": f1, "fx": fx, "f2": f2,
