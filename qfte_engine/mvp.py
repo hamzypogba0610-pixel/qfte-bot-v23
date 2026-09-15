@@ -1,7 +1,7 @@
 """
 qfte_engine/mvp.py
 ------------------
-Moteur QFTE V23.0 - MVP avec ajustements contextuels + HT + global.
+Moteur QFTE V23.0 - MVP avec ajustements contextuels, HT, global, classement.
 """
 
 import math
@@ -76,6 +76,26 @@ def facteur_blessures(a_blessures):
     return 0.85 if a_blessures else 1.00
 
 
+def facteur_classement(pos_dom, pos_ext, total_equipes):
+    """
+    Retourne (facteur_home, facteur_away) basé sur l'écart de classement.
+    Plafonné à ±15%.
+    """
+    if pos_dom is None or pos_ext is None or total_equipes is None or total_equipes <= 1:
+        return (1.0, 1.0)
+
+    # Écart normalisé : > 0 → domicile mieux classé
+    ecart = (pos_ext - pos_dom) / total_equipes
+    ecart = max(min(ecart, 1.0), -1.0)  # borne [-1, +1]
+
+    # Amplitude max : 15%
+    ajust = ecart * 0.15
+
+    f_home = 1.0 + ajust
+    f_away = 1.0 - ajust
+    return (round(f_home, 3), round(f_away, 3))
+
+
 def facteur_ht(matchs):
     """
     Analyse les HT pour détecter le profil de l'équipe.
@@ -106,7 +126,8 @@ def facteur_ht(matchs):
 # =========================================================
 def compute_lambdas(
     home_ctx, home_glob, away_ctx, away_glob,
-    meteo, enjeu, blessures_dom, blessures_ext
+    meteo, enjeu, blessures_dom, blessures_ext,
+    pos_dom=None, pos_ext=None, total_equipes=None
 ):
     # Moyennes contextuelles
     home_bp_ctx = moy([m["bp"] for m in home_ctx])
@@ -136,6 +157,11 @@ def compute_lambdas(
     lambda_home *= f_ht_home
     lambda_away *= f_ht_away
 
+    # Ajustement classement
+    f_class_home, f_class_away = facteur_classement(pos_dom, pos_ext, total_equipes)
+    lambda_home *= f_class_home
+    lambda_away *= f_class_away
+
     # Ajustement météo + enjeu (sur les 2 équipes)
     f_commun = facteur_meteo(meteo) * facteur_enjeu(enjeu)
     lambda_home *= f_commun
@@ -156,6 +182,8 @@ def compute_lambdas(
         "away_bp_glob": round(away_bp_glob, 2),
         "f_ht_home": round(f_ht_home, 3),
         "f_ht_away": round(f_ht_away, 3),
+        "f_class_home": f_class_home,
+        "f_class_away": f_class_away,
         "f_meteo": round(facteur_meteo(meteo), 3),
         "f_enjeu": round(facteur_enjeu(enjeu), 3),
         "f_bless_dom": facteur_blessures(blessures_dom),
@@ -242,11 +270,13 @@ def analyser_match_football(
     open_1, open_x, open_2,
     curr_1, curr_x, curr_2,
     meteo="normale", enjeu="normal",
-    blessures_dom=False, blessures_ext=False
+    blessures_dom=False, blessures_ext=False,
+    pos_dom=None, pos_ext=None, total_equipes=None
 ):
     lambda_home, lambda_away, details = compute_lambdas(
         home_ctx, home_glob, away_ctx, away_glob,
-        meteo, enjeu, blessures_dom, blessures_ext
+        meteo, enjeu, blessures_dom, blessures_ext,
+        pos_dom, pos_ext, total_equipes
     )
 
     matrix = compute_score_matrix(lambda_home, lambda_away)
