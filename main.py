@@ -9,54 +9,25 @@ app = FastAPI(title="QFTE Bot V23.0")
 templates = Jinja2Templates(directory="templates")
 
 
-# =========================================================
-# PARSER — Convertit "3-1 (1-0), 2-2" en liste de matchs
-# =========================================================
 def parser_matchs(texte):
-    """
-    Parse une chaîne comme :
-    "3-1 (1-0), 2-2, 4-0 (2-0)"
-    et retourne une liste de dict :
-    [{'bp':3, 'bc':1, 'ht_bp':1, 'ht_bc':0}, ...]
-    """
     resultats = []
     if not texte:
         return resultats
-
-    # Séparer par virgules
     morceaux = [m.strip() for m in texte.split(",") if m.strip()]
-
     for m in morceaux:
-        # Format avec HT : 3-1 (1-0)
         match_ht = re.match(r"^(\d+)\s*-\s*(\d+)\s*\(\s*(\d+)\s*-\s*(\d+)\s*\)$", m)
-        # Format sans HT : 3-1
         match_simple = re.match(r"^(\d+)\s*-\s*(\d+)$", m)
-
         if match_ht:
             resultats.append({
-                "bp": int(match_ht.group(1)),
-                "bc": int(match_ht.group(2)),
-                "ht_bp": int(match_ht.group(3)),
-                "ht_bc": int(match_ht.group(4)),
+                "bp": int(match_ht.group(1)), "bc": int(match_ht.group(2)),
+                "ht_bp": int(match_ht.group(3)), "ht_bc": int(match_ht.group(4)),
             })
         elif match_simple:
             resultats.append({
-                "bp": int(match_simple.group(1)),
-                "bc": int(match_simple.group(2)),
-                "ht_bp": None,
-                "ht_bc": None,
+                "bp": int(match_simple.group(1)), "bc": int(match_simple.group(2)),
+                "ht_bp": None, "ht_bc": None,
             })
-        # Sinon : on ignore le morceau invalide
-
     return resultats
-
-
-def moyenne(valeurs):
-    """Moyenne en ignorant les valeurs None ou vides."""
-    v = [x for x in valeurs if x is not None and x > 0]
-    if not v:
-        return 0.0
-    return sum(v) / len(v)
 
 
 def ffloat(form, key, default=0.0):
@@ -71,52 +42,34 @@ def ffloat(form, key, default=0.0):
 
 @app.get("/", response_class=HTMLResponse)
 async def accueil(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "titre": "QFTE V23.0 – Bot d'analyse"}
-    )
+    return templates.TemplateResponse("index.html", {"request": request, "titre": "QFTE V23.0"})
 
 
 @app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
     form = await request.form()
 
-    sport = form.get("sport", "football")
     competition = form.get("competition", "")
     equipe_domicile = form.get("equipe_domicile", "")
     equipe_exterieur = form.get("equipe_exterieur", "")
-    date_match = form.get("date_match", "")
 
-    # Parsing des 4 sections compactes
-    home_contextuel = parser_matchs(form.get("home_contextuel", ""))
-    home_global = parser_matchs(form.get("home_global", ""))
-    away_contextuel = parser_matchs(form.get("away_contextuel", ""))
-    away_global = parser_matchs(form.get("away_global", ""))
+    home_ctx = parser_matchs(form.get("home_contextuel", ""))
+    home_glob = parser_matchs(form.get("home_global", ""))
+    away_ctx = parser_matchs(form.get("away_contextuel", ""))
+    away_glob = parser_matchs(form.get("away_global", ""))
 
-    # Pour l'instant, on utilise UNIQUEMENT le contexte (comme avant)
-    home_bp_moy = moyenne([m["bp"] for m in home_contextuel])
-    home_bc_moy = moyenne([m["bc"] for m in home_contextuel])
-    away_bp_moy = moyenne([m["bp"] for m in away_contextuel])
-    away_bc_moy = moyenne([m["bc"] for m in away_contextuel])
-
-    # Cotes
-    open_1 = ffloat(form, "open_1")
-    open_x = ffloat(form, "open_x")
-    open_2 = ffloat(form, "open_2")
-    curr_1 = ffloat(form, "curr_1")
-    curr_x = ffloat(form, "curr_x")
-    curr_2 = ffloat(form, "curr_2")
+    open_1 = ffloat(form, "open_1"); open_x = ffloat(form, "open_x"); open_2 = ffloat(form, "open_2")
+    curr_1 = ffloat(form, "curr_1"); curr_x = ffloat(form, "curr_x"); curr_2 = ffloat(form, "curr_2")
 
     meteo = form.get("meteo", "normale")
     enjeu = form.get("enjeu", "normal")
-    blessures_domicile = form.get("blessures_domicile") is not None
-    blessures_exterieur = form.get("blessures_exterieur") is not None
+    blessures_dom = form.get("blessures_domicile") is not None
+    blessures_ext = form.get("blessures_exterieur") is not None
 
-    # Appel moteur
     r = analyser_match_football(
-        home_bp_moy, home_bc_moy, away_bp_moy, away_bc_moy,
-        open_1, open_x, open_2,
-        curr_1, curr_x, curr_2
+        home_ctx, home_glob, away_ctx, away_glob,
+        open_1, open_x, open_2, curr_1, curr_x, curr_2,
+        meteo, enjeu, blessures_dom, blessures_ext
     )
 
     # Bloc décision
@@ -168,11 +121,20 @@ async def analyser(request: Request):
     for s in r["top_3_scores"]:
         scores_html += f'<div class="ligne"><span class="label">#{s["rank"]}</span><span class="val">{s["score"]} — {s["probability"]*100:.2f}%</span></div>'
 
-    # Info parsing (debug utile)
-    parsing_info = f"""
-    <p style="text-align:center;color:#666;font-size:11px;">
-    Matchs parsés : Dom. contextuel={len(home_contextuel)} | Dom. global={len(home_global)} | Ext. contextuel={len(away_contextuel)} | Ext. global={len(away_global)}
-    </p>
+    d = r["details"]
+    details_html = f"""
+    <div class="box">
+        <h2>🔬 Ajustements appliqués</h2>
+        <div class="ligne"><span class="label">BP domicile (ctx / glob)</span><span class="val">{d['home_bp_ctx']} / {d['home_bp_glob']}</span></div>
+        <div class="ligne"><span class="label">BP extérieur (ctx / glob)</span><span class="val">{d['away_bp_ctx']} / {d['away_bp_glob']}</span></div>
+        <div class="ligne"><span class="label">Facteur HT domicile</span><span class="val">{d['f_ht_home']}</span></div>
+        <div class="ligne"><span class="label">Facteur HT extérieur</span><span class="val">{d['f_ht_away']}</span></div>
+        <div class="ligne"><span class="label">Facteur météo</span><span class="val">{d['f_meteo']}</span></div>
+        <div class="ligne"><span class="label">Facteur enjeu</span><span class="val">{d['f_enjeu']}</span></div>
+        <div class="ligne"><span class="label">Facteur bless. dom.</span><span class="val">{d['f_bless_dom']}</span></div>
+        <div class="ligne"><span class="label">Facteur bless. ext.</span><span class="val">{d['f_bless_ext']}</span></div>
+        <div class="ligne"><span class="label">Facteur commun</span><span class="val">{d['f_commun']}</span></div>
+    </div>
     """
 
     html = f"""
@@ -196,13 +158,12 @@ async def analyser(request: Request):
     <body>
         <h1>🦁 QFTE V23.0 — Analyse</h1>
         <p style="text-align:center;color:#999;font-size:12px;">{equipe_domicile} vs {equipe_exterieur} — {competition}</p>
-        <p style="text-align:center;color:#666;font-size:11px;">Météo: {meteo} | Enjeu: {enjeu} | Blessures dom: {'Oui' if blessures_domicile else 'Non'} | Blessures ext: {'Oui' if blessures_exterieur else 'Non'}</p>
-        {parsing_info}
+        <p style="text-align:center;color:#666;font-size:11px;">Météo: {meteo} | Enjeu: {enjeu} | Bless. dom: {'Oui' if blessures_dom else 'Non'} | Bless. ext: {'Oui' if blessures_ext else 'Non'}</p>
 
         {decision_html}
 
         <div class="box">
-            <h2>⚽ Buts attendus (λ)</h2>
+            <h2>⚽ Buts attendus (λ) ajustés</h2>
             <div class="ligne"><span class="label">{equipe_domicile}</span><span class="val">{r['lambda_home']}</span></div>
             <div class="ligne"><span class="label">{equipe_exterieur}</span><span class="val">{r['lambda_away']}</span></div>
         </div>
@@ -219,7 +180,9 @@ async def analyser(request: Request):
             {scores_html}
         </div>
 
-        <h2 style="text-align:left;">📋 Détail des candidats (filtres V23.0)</h2>
+        {details_html}
+
+        <h2 style="text-align:left;">📋 Détail des candidats</h2>
         {candidats_html}
 
         <p style="text-align:center;"><a href="/">← Nouvelle analyse</a></p>
