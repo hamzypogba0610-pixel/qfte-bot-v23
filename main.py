@@ -1,4 +1,6 @@
+import json
 import re
+from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -10,7 +12,7 @@ templates = Jinja2Templates(directory="templates")
 
 
 # =========================================================
-# PARSER
+# HELPERS
 # =========================================================
 def parser_matchs(texte):
     resultats = []
@@ -53,11 +55,32 @@ def fint(form, key):
         return None
 
 
+STYLE_COMMUN = """
+    body { font-family: -apple-system, Arial, sans-serif; background: #0f0f1a; color: #eee; padding: 16px; line-height: 1.5; }
+    h1 { color: #ffcc00; font-size: 20px; text-align: center; }
+    h2 { color: #ffcc00; font-size: 15px; margin-top: 10px; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    .box { background: #14141f; border: 1px solid #262636; border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+    .ligne { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+    .label { color: #999; }
+    .val { color: #fff; font-weight: bold; }
+    a { color: #ffcc00; text-decoration: none; display: inline-block; margin-top: 20px; }
+    .btn { display: inline-block; padding: 12px 16px; background: #ffcc00; color: #000; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; margin: 6px 4px 6px 0; text-decoration: none; }
+    .btn-secondary { background: #262636; color: #ffcc00; }
+    .btn-danger { background: #ef4444; color: #fff; }
+"""
+
+
+# =========================================================
+# ROUTE ACCUEIL
+# =========================================================
 @app.get("/", response_class=HTMLResponse)
 async def accueil(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "titre": "QFTE V23.0"})
 
 
+# =========================================================
+# ROUTE ANALYSER
+# =========================================================
 @app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
     form = await request.form()
@@ -65,6 +88,8 @@ async def analyser(request: Request):
     competition = form.get("competition", "")
     equipe_domicile = form.get("equipe_domicile", "")
     equipe_exterieur = form.get("equipe_exterieur", "")
+    date_match = form.get("date_match", "")
+    sport = form.get("sport", "football")
 
     home_ctx = parser_matchs(form.get("home_contextuel", ""))
     home_glob = parser_matchs(form.get("home_global", ""))
@@ -79,7 +104,6 @@ async def analyser(request: Request):
     blessures_dom = form.get("blessures_domicile") is not None
     blessures_ext = form.get("blessures_exterieur") is not None
 
-    # Classement
     pos_dom = fint(form, "pos_dom")
     pos_ext = fint(form, "pos_ext")
     total_equipes = fint(form, "total_equipes")
@@ -90,6 +114,26 @@ async def analyser(request: Request):
         meteo, enjeu, blessures_dom, blessures_ext,
         pos_dom, pos_ext, total_equipes
     )
+
+    # Construire l'analyse complète (pour historique/export)
+    analyse_complete = {
+        "date_analyse": datetime.now().isoformat(timespec="seconds"),
+        "sport": sport,
+        "competition": competition,
+        "equipe_domicile": equipe_domicile,
+        "equipe_exterieur": equipe_exterieur,
+        "date_match": date_match,
+        "meteo": meteo,
+        "enjeu": enjeu,
+        "blessures_dom": blessures_dom,
+        "blessures_ext": blessures_ext,
+        "cotes": {
+            "ouverture": {"1": open_1, "X": open_x, "2": open_2},
+            "actuelles": {"1": curr_1, "X": curr_x, "2": curr_2},
+        },
+        "resultats": r,
+    }
+    analyse_json = json.dumps(analyse_complete, ensure_ascii=False).replace("</", "<\\/")
 
     # Bloc décision
     if r["pari_retenu"]:
@@ -165,18 +209,13 @@ async def analyser(request: Request):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>QFTE — Résultats</title>
-        <style>
-            body {{ font-family: -apple-system, Arial, sans-serif; background: #0f0f1a; color: #eee; padding: 16px; line-height: 1.5; }}
-            h1 {{ color: #ffcc00; font-size: 20px; text-align: center; }}
-            h2 {{ color: #ffcc00; font-size: 15px; margin-top: 10px; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 6px; }}
-            .box {{ background: #14141f; border: 1px solid #262636; border-radius: 10px; padding: 12px; margin-bottom: 14px; }}
-            .ligne {{ display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }}
-            .label {{ color: #999; }}
-            .val {{ color: #fff; font-weight: bold; }}
-            a {{ color: #ffcc00; text-decoration: none; display: inline-block; margin-top: 20px; }}
-        </style>
+        <style>{STYLE_COMMUN}</style>
     </head>
     <body>
+        <div style="text-align:center;margin-bottom:12px;">
+            <a href="/historique" class="btn btn-secondary" style="margin:0;">📊 Historique</a>
+        </div>
+
         <h1>🦁 QFTE V23.0 — Analyse</h1>
         <p style="text-align:center;color:#999;font-size:12px;">{equipe_domicile} vs {equipe_exterieur} — {competition}</p>
         <p style="text-align:center;color:#666;font-size:11px;">Météo: {meteo} | Enjeu: {enjeu} | Bless. dom: {'Oui' if blessures_dom else 'Non'} | Bless. ext: {'Oui' if blessures_ext else 'Non'}</p>
@@ -206,13 +245,157 @@ async def analyser(request: Request):
         <h2 style="text-align:left;">📋 Détail des candidats</h2>
         {candidats_html}
 
-        <p style="text-align:center;"><a href="/">← Nouvelle analyse</a></p>
+        <div style="text-align:center;margin:24px 0;">
+            <button class="btn" onclick="sauvegarder()">💾 Sauvegarder cette analyse</button>
+            <a href="/" class="btn btn-secondary">← Nouvelle analyse</a>
+        </div>
+
+        <script>
+        const ANALYSE = {analyse_json};
+
+        function sauvegarder() {{
+            try {{
+                let hist = JSON.parse(localStorage.getItem('qfte_analyses') || '[]');
+                // Éviter les doublons : si même match + même date_match, on remplace
+                hist = hist.filter(a => !(a.equipe_domicile === ANALYSE.equipe_domicile && a.equipe_exterieur === ANALYSE.equipe_exterieur && a.date_match === ANALYSE.date_match));
+                hist.unshift(ANALYSE);
+                if (hist.length > 200) hist = hist.slice(0, 200);
+                localStorage.setItem('qfte_analyses', JSON.stringify(hist));
+                alert('✅ Analyse sauvegardée ! Consulte /historique.');
+            }} catch(e) {{
+                alert('❌ Erreur : ' + e.message);
+            }}
+        }}
+        </script>
     </body>
     </html>
     """
     return HTMLResponse(content=html)
 
 
+# =========================================================
+# ROUTE HISTORIQUE
+# =========================================================
+HISTORIQUE_HTML = """
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QFTE — Historique</title>
+    <style>
+        body { font-family: -apple-system, Arial, sans-serif; background: #0f0f1a; color: #eee; padding: 16px; line-height: 1.5; }
+        h1 { color: #ffcc00; font-size: 20px; text-align: center; }
+        h2 { color: #ffcc00; font-size: 15px; margin-top: 10px; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+        .box { background: #14141f; border: 1px solid #262636; border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+        .ligne { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+        .label { color: #999; }
+        .val { color: #fff; font-weight: bold; }
+        a { color: #ffcc00; text-decoration: none; display: inline-block; margin-top: 20px; }
+        .btn { display: inline-block; padding: 12px 16px; background: #ffcc00; color: #000; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; margin: 6px 4px 6px 0; text-decoration: none; }
+        .btn-secondary { background: #262636; color: #ffcc00; }
+        .btn-danger { background: #ef4444; color: #fff; }
+        .empty { text-align: center; color: #666; padding: 40px 20px; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .badge-elite { background: #4ade80; color: #000; }
+        .badge-premium { background: #22c55e; color: #000; }
+        .badge-good { background: #eab308; color: #000; }
+        .badge-avoid { background: #ef4444; color: #fff; }
+    </style>
+</head>
+<body>
+    <h1>📊 Historique QFTE V23.0</h1>
+
+    <div style="text-align:center;margin-bottom:16px;">
+        <a href="/" class="btn btn-secondary">← Nouvelle analyse</a>
+        <button class="btn" onclick="exporter()">📤 Exporter JSON</button>
+        <button class="btn btn-danger" onclick="vider()">🗑️ Vider</button>
+    </div>
+
+    <div id="compteur" style="text-align:center;color:#999;font-size:13px;margin-bottom:16px;"></div>
+
+    <div id="liste"></div>
+
+    <script>
+    function charger() {
+        let hist = [];
+        try { hist = JSON.parse(localStorage.getItem('qfte_analyses') || '[]'); } catch(e) {}
+        return hist;
+    }
+
+    function afficher() {
+        const hist = charger();
+        const liste = document.getElementById('liste');
+        const compteur = document.getElementById('compteur');
+
+        if (hist.length === 0) {
+            compteur.textContent = '';
+            liste.innerHTML = '<div class="empty">Aucune analyse sauvegardée pour l\\'instant.<br>Lance une analyse et clique sur 💾 Sauvegarder.</div>';
+            return;
+        }
+
+        compteur.textContent = hist.length + ' analyse(s) sauvegardée(s)';
+
+        let html = '';
+        hist.forEach((a, i) => {
+            const r = a.resultats || {};
+            const pari = r.pari_retenu;
+            let badge = '<span class="badge badge-avoid">AUCUN</span>';
+            let resume = 'Aucun pari retenu';
+            if (pari) {
+                if (pari.niveau === 'ELITE') badge = '<span class="badge badge-elite">ELITE</span>';
+                else if (pari.niveau === 'PREMIUM') badge = '<span class="badge badge-premium">PREMIUM</span>';
+                else if (pari.niveau === 'GOOD') badge = '<span class="badge badge-good">GOOD</span>';
+                else badge = '<span class="badge badge-avoid">' + pari.niveau + '</span>';
+                resume = pari.selection + ' @ ' + pari.cote + ' (EV ' + (pari.ev*100).toFixed(2) + '%, fiab ' + pari.fiabilite + ')';
+            }
+
+            html += '<div class="box">';
+            html += '<div class="ligne"><span class="label">#' + (i+1) + ' — ' + (a.date_analyse || '') + '</span><span class="val">' + badge + '</span></div>';
+            html += '<div class="ligne"><span class="label">Match</span><span class="val">' + (a.equipe_domicile || '') + ' vs ' + (a.equipe_exterieur || '') + '</span></div>';
+            html += '<div class="ligne"><span class="label">Compétition</span><span class="val">' + (a.competition || '') + '</span></div>';
+            html += '<div class="ligne"><span class="label">Résultat</span><span class="val">' + resume + '</span></div>';
+            html += '</div>';
+        });
+        liste.innerHTML = html;
+    }
+
+    function exporter() {
+        const hist = charger();
+        if (hist.length === 0) { alert('Rien à exporter.'); return; }
+        const data = JSON.stringify(hist, null, 2);
+        const blob = new Blob([data], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'qfte_historique_' + new Date().toISOString().slice(0,10) + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function vider() {
+        if (!confirm('⚠️ Vider TOUT l\\'historique ? Cette action est irréversible.')) return;
+        localStorage.removeItem('qfte_analyses');
+        afficher();
+    }
+
+    afficher();
+    </script>
+</body>
+</html>
+"""
+
+
+@app.get("/historique", response_class=HTMLResponse)
+async def historique(request: Request):
+    return HTMLResponse(content=HISTORIQUE_HTML)
+
+
+# =========================================================
+# HEALTH
+# =========================================================
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "V23.0"}
