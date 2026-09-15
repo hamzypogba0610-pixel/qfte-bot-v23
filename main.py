@@ -9,6 +9,9 @@ app = FastAPI(title="QFTE Bot V23.0")
 templates = Jinja2Templates(directory="templates")
 
 
+# =========================================================
+# PARSER
+# =========================================================
 def parser_matchs(texte):
     resultats = []
     if not texte:
@@ -40,6 +43,16 @@ def ffloat(form, key, default=0.0):
         return default
 
 
+def fint(form, key):
+    v = form.get(key, "")
+    if v is None or v == "":
+        return None
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return None
+
+
 @app.get("/", response_class=HTMLResponse)
 async def accueil(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "titre": "QFTE V23.0"})
@@ -66,10 +79,16 @@ async def analyser(request: Request):
     blessures_dom = form.get("blessures_domicile") is not None
     blessures_ext = form.get("blessures_exterieur") is not None
 
+    # Classement
+    pos_dom = fint(form, "pos_dom")
+    pos_ext = fint(form, "pos_ext")
+    total_equipes = fint(form, "total_equipes")
+
     r = analyser_match_football(
         home_ctx, home_glob, away_ctx, away_glob,
         open_1, open_x, open_2, curr_1, curr_x, curr_2,
-        meteo, enjeu, blessures_dom, blessures_ext
+        meteo, enjeu, blessures_dom, blessures_ext,
+        pos_dom, pos_ext, total_equipes
     )
 
     # Bloc décision
@@ -129,6 +148,8 @@ async def analyser(request: Request):
         <div class="ligne"><span class="label">BP extérieur (ctx / glob)</span><span class="val">{d['away_bp_ctx']} / {d['away_bp_glob']}</span></div>
         <div class="ligne"><span class="label">Facteur HT domicile</span><span class="val">{d['f_ht_home']}</span></div>
         <div class="ligne"><span class="label">Facteur HT extérieur</span><span class="val">{d['f_ht_away']}</span></div>
+        <div class="ligne"><span class="label">Facteur classement dom.</span><span class="val">{d['f_class_home']}</span></div>
+        <div class="ligne"><span class="label">Facteur classement ext.</span><span class="val">{d['f_class_away']}</span></div>
         <div class="ligne"><span class="label">Facteur météo</span><span class="val">{d['f_meteo']}</span></div>
         <div class="ligne"><span class="label">Facteur enjeu</span><span class="val">{d['f_enjeu']}</span></div>
         <div class="ligne"><span class="label">Facteur bless. dom.</span><span class="val">{d['f_bless_dom']}</span></div>
