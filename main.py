@@ -42,39 +42,69 @@ async def analyser(
     blessures_exterieur: str = Form(None),
     notes: str = Form(""),
 ):
-    # Moyennes buts marqués / encaissés
     home_bp_moy = (home_bp_1 + home_bp_2 + home_bp_3 + home_bp_4 + home_bp_5) / 5.0
     home_bc_moy = (home_bc_1 + home_bc_2 + home_bc_3 + home_bc_4 + home_bc_5) / 5.0
     away_bp_moy = (away_bp_1 + away_bp_2 + away_bp_3 + away_bp_4 + away_bp_5) / 5.0
     away_bc_moy = (away_bc_1 + away_bc_2 + away_bc_3 + away_bc_4 + away_bc_5) / 5.0
 
-    # Appel au moteur (football uniquement pour l'instant)
-    resultat = analyser_match_football(
+    r = analyser_match_football(
         home_bp_moy, home_bc_moy, away_bp_moy, away_bc_moy,
         open_1, open_x, open_2,
         curr_1, curr_x, curr_2
     )
 
-    # --- Construction des recommandations (HTML) ---
-    reco_html = ""
-    for i, r in enumerate(resultat["recommandations"], 1):
-        ev_pct = r["ev"] * 100
-        ev_color = "#4ade80" if ev_pct >= 0 else "#ef4444"
-        reco_html += f"""
-        <div class="box">
-            <div class="ligne"><span class="label">#{i} — Sélection</span><span class="val">{r['selection']}</span></div>
-            <div class="ligne"><span class="label">Probabilité</span><span class="val">{r['p']*100:.2f}%</span></div>
-            <div class="ligne"><span class="label">Cote</span><span class="val">{r['cote']}</span></div>
-            <div class="ligne"><span class="label">EV net</span><span class="val" style="color:{ev_color}">{ev_pct:+.2f}%</span></div>
-            <div class="ligne"><span class="label">Fiabilité</span><span class="val">{r['fiabilite']}</span></div>
-            <div class="ligne"><span class="label">Niveau</span><span class="val">{r['niveau']}</span></div>
-            <div class="ligne"><span class="label">Décision</span><span class="val">{r['decision']}</span></div>
+    # ---- Bloc DÉCISION FINALE ----
+    if r["pari_retenu"]:
+        p = r["pari_retenu"]
+        decision_html = f"""
+        <div class="box" style="border:2px solid #4ade80;">
+            <h2 style="color:#4ade80;">🟢 PARI RETENU</h2>
+            <div class="ligne"><span class="label">Sélection</span><span class="val">{p['selection']}</span></div>
+            <div class="ligne"><span class="label">Cote</span><span class="val">{p['cote']}</span></div>
+            <div class="ligne"><span class="label">Probabilité</span><span class="val">{p['p']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">EV net</span><span class="val" style="color:#4ade80;">{p['ev']*100:+.2f}%</span></div>
+            <div class="ligne"><span class="label">Fiabilité</span><span class="val">{p['fiabilite']}</span></div>
+            <div class="ligne"><span class="label">Niveau</span><span class="val">{p['niveau']}</span></div>
+            <div class="ligne"><span class="label">Décision</span><span class="val">{p['decision']}</span></div>
+            <div class="ligne"><span class="label">💰 Stake</span><span class="val">{p['stake']}% bankroll</span></div>
+        </div>
+        """
+    else:
+        decision_html = """
+        <div class="box" style="border:2px solid #ef4444;">
+            <h2 style="color:#ef4444;">🔴 AUCUN PARI RETENU</h2>
+            <p style="color:#ccc;font-size:13px;">
+            Aucune sélection ne respecte les filtres de discipline V23.0
+            (Fiabilité ≥ 0.75, Value ≥ 5%, Confiance ≥ 70%).
+            </p>
         </div>
         """
 
-    # --- Top 3 scores ---
+    # ---- Bloc candidats analysés ----
+    candidats_html = ""
+    for c in r["candidats"]:
+        ev_color = "#4ade80" if c["ev"] >= 0 else "#ef4444"
+        if c["passe_filtres"]:
+            statut = '<span style="color:#4ade80;font-weight:bold;">✅ PASSE</span>'
+            raisons_html = ""
+        else:
+            statut = '<span style="color:#ef4444;font-weight:bold;">❌ REJETÉ</span>'
+            raisons_html = "".join([f'<div class="ligne"><span class="label" style="color:#ef4444;font-size:12px;">→ {x}</span></div>' for x in c["raisons_rejet"]])
+
+        candidats_html += f"""
+        <div class="box">
+            <div class="ligne"><span class="label">Sélection</span><span class="val">{c['selection']}</span></div>
+            <div class="ligne"><span class="label">Probabilité</span><span class="val">{c['p']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">Cote</span><span class="val">{c['cote']}</span></div>
+            <div class="ligne"><span class="label">EV net</span><span class="val" style="color:{ev_color};">{c['ev']*100:+.2f}%</span></div>
+            <div class="ligne"><span class="label">Fiabilité</span><span class="val">{c['fiabilite']}</span></div>
+            <div class="ligne"><span class="label">Filtres</span><span class="val">{statut}</span></div>
+            {raisons_html}
+        </div>
+        """
+
     scores_html = ""
-    for s in resultat["top_3_scores"]:
+    for s in r["top_3_scores"]:
         scores_html += f"""
         <div class="ligne">
             <span class="label">#{s['rank']}</span>
@@ -92,7 +122,7 @@ async def analyser(
         <style>
             body {{ font-family: -apple-system, Arial, sans-serif; background: #0f0f1a; color: #eee; padding: 16px; line-height: 1.5; }}
             h1 {{ color: #ffcc00; font-size: 20px; text-align: center; }}
-            h2 {{ color: #ffcc00; font-size: 15px; margin-top: 20px; border-bottom: 1px solid #333; padding-bottom: 6px; }}
+            h2 {{ color: #ffcc00; font-size: 15px; margin-top: 10px; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 6px; }}
             .box {{ background: #14141f; border: 1px solid #262636; border-radius: 10px; padding: 12px; margin-bottom: 14px; }}
             .ligne {{ display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }}
             .label {{ color: #999; }}
@@ -104,17 +134,19 @@ async def analyser(
         <h1>🦁 QFTE V23.0 — Analyse</h1>
         <p style="text-align:center;color:#999;font-size:12px;">{equipe_domicile} vs {equipe_exterieur} — {competition}</p>
 
+        {decision_html}
+
         <div class="box">
             <h2>⚽ Buts attendus (λ)</h2>
-            <div class="ligne"><span class="label">{equipe_domicile}</span><span class="val">{resultat['lambda_home']}</span></div>
-            <div class="ligne"><span class="label">{equipe_exterieur}</span><span class="val">{resultat['lambda_away']}</span></div>
+            <div class="ligne"><span class="label">{equipe_domicile}</span><span class="val">{r['lambda_home']}</span></div>
+            <div class="ligne"><span class="label">{equipe_exterieur}</span><span class="val">{r['lambda_away']}</span></div>
         </div>
 
         <div class="box">
             <h2>🎯 Probabilités 1X2</h2>
-            <div class="ligne"><span class="label">1 (Domicile)</span><span class="val">{resultat['p1']*100:.2f}%</span></div>
-            <div class="ligne"><span class="label">X (Nul)</span><span class="val">{resultat['px']*100:.2f}%</span></div>
-            <div class="ligne"><span class="label">2 (Extérieur)</span><span class="val">{resultat['p2']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">1 (Domicile)</span><span class="val">{r['p1']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">X (Nul)</span><span class="val">{r['px']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">2 (Extérieur)</span><span class="val">{r['p2']*100:.2f}%</span></div>
         </div>
 
         <div class="box">
@@ -122,8 +154,8 @@ async def analyser(
             {scores_html}
         </div>
 
-        <h2>💰 Recommandations (classées par fiabilité)</h2>
-        {reco_html}
+        <h2 style="text-align:left;">📋 Détail des candidats (filtres V23.0)</h2>
+        {candidats_html}
 
         <p style="text-align:center;"><a href="/">← Nouvelle analyse</a></p>
     </body>
