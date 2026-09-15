@@ -35,6 +35,36 @@ def parser_matchs(texte):
     return resultats
 
 
+def parser_handicap(texte):
+    """
+    Parse : "-0.5/1.90/+0.5/1.95, -1.5/2.10/+1.5/1.75"
+    Retourne une liste de dicts.
+    """
+    resultats = []
+    if not texte:
+        return resultats
+    morceaux = [m.strip() for m in texte.split(",") if m.strip()]
+    for m in morceaux:
+        # Format : hcp_dom/cote_dom/hcp_ext/cote_ext
+        parts = [p.strip() for p in m.split("/") if p.strip()]
+        if len(parts) != 4:
+            continue
+        try:
+            hcp_dom = float(parts[0])
+            cote_dom = float(parts[1])
+            hcp_ext = float(parts[2])
+            cote_ext = float(parts[3])
+            resultats.append({
+                "hcp_dom": hcp_dom,
+                "cote_dom": cote_dom,
+                "hcp_ext": hcp_ext,
+                "cote_ext": cote_ext,
+            })
+        except (ValueError, TypeError):
+            continue
+    return resultats
+
+
 def ffloat(form, key, default=0.0):
     v = form.get(key, "")
     if v is None or v == "":
@@ -70,17 +100,11 @@ STYLE_COMMUN = """
 """
 
 
-# =========================================================
-# ROUTE ACCUEIL
-# =========================================================
 @app.get("/", response_class=HTMLResponse)
 async def accueil(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "titre": "QFTE V23.0"})
 
 
-# =========================================================
-# ROUTE ANALYSER
-# =========================================================
 @app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
     form = await request.form()
@@ -95,6 +119,8 @@ async def analyser(request: Request):
     home_glob = parser_matchs(form.get("home_global", ""))
     away_ctx = parser_matchs(form.get("away_contextuel", ""))
     away_glob = parser_matchs(form.get("away_global", ""))
+    h2h_matchs = parser_matchs(form.get("h2h", ""))
+    handicap_lignes = parser_handicap(form.get("handicap", ""))
 
     open_1 = ffloat(form, "open_1"); open_x = ffloat(form, "open_x"); open_2 = ffloat(form, "open_2")
     curr_1 = ffloat(form, "curr_1"); curr_x = ffloat(form, "curr_x"); curr_2 = ffloat(form, "curr_2")
@@ -103,6 +129,8 @@ async def analyser(request: Request):
     enjeu = form.get("enjeu", "normal")
     blessures_dom = form.get("blessures_domicile") is not None
     blessures_ext = form.get("blessures_exterieur") is not None
+    fatigue_dom = form.get("fatigue_domicile") is not None
+    fatigue_ext = form.get("fatigue_exterieur") is not None
 
     pos_dom = fint(form, "pos_dom")
     pos_ext = fint(form, "pos_ext")
@@ -112,10 +140,10 @@ async def analyser(request: Request):
         home_ctx, home_glob, away_ctx, away_glob,
         open_1, open_x, open_2, curr_1, curr_x, curr_2,
         meteo, enjeu, blessures_dom, blessures_ext,
+        fatigue_dom, fatigue_ext, h2h_matchs, handicap_lignes,
         pos_dom, pos_ext, total_equipes
     )
 
-    # Construire l'analyse complète (pour historique/export)
     analyse_complete = {
         "date_analyse": datetime.now().isoformat(timespec="seconds"),
         "sport": sport,
@@ -123,14 +151,6 @@ async def analyser(request: Request):
         "equipe_domicile": equipe_domicile,
         "equipe_exterieur": equipe_exterieur,
         "date_match": date_match,
-        "meteo": meteo,
-        "enjeu": enjeu,
-        "blessures_dom": blessures_dom,
-        "blessures_ext": blessures_ext,
-        "cotes": {
-            "ouverture": {"1": open_1, "X": open_x, "2": open_2},
-            "actuelles": {"1": curr_1, "X": curr_x, "2": curr_2},
-        },
         "resultats": r,
     }
     analyse_json = json.dumps(analyse_complete, ensure_ascii=False).replace("</", "<\\/")
@@ -138,9 +158,10 @@ async def analyser(request: Request):
     # Bloc décision
     if r["pari_retenu"]:
         p = r["pari_retenu"]
+        type_label = p.get("type", "1X2")
         decision_html = f"""
         <div class="box" style="border:2px solid #4ade80;">
-            <h2 style="color:#4ade80;">🟢 PARI RETENU</h2>
+            <h2 style="color:#4ade80;">🟢 PARI RETENU ({type_label})</h2>
             <div class="ligne"><span class="label">Sélection</span><span class="val">{p['selection']}</span></div>
             <div class="ligne"><span class="label">Cote</span><span class="val">{p['cote']}</span></div>
             <div class="ligne"><span class="label">Probabilité</span><span class="val">{p['p']*100:.2f}%</span></div>
@@ -180,6 +201,32 @@ async def analyser(request: Request):
         </div>
         """
 
+    # Section handicap
+    handicap_html = ""
+    if r["handicap_resultats"]:
+        for h in r["handicap_resultats"]:
+            ev_color = "#4ade80" if h["ev"] >= 0 else "#ef4444"
+            if h["passe_filtres"]:
+                statut = '<span style="color:#4ade80;font-weight:bold;">✅ PASSE</span>'
+                raisons_html = ""
+            else:
+                statut = '<span style="color:#ef4444;font-weight:bold;">❌ REJETÉ</span>'
+                raisons_html = "".join([f'<div class="ligne"><span class="label" style="color:#ef4444;font-size:12px;">→ {x}</span></div>' for x in h["raisons_rejet"]])
+            handicap_html += f"""
+            <div class="box">
+                <div class="ligne"><span class="label">Handicap</span><span class="val">{h['hcp']:+g} ({h['cible']})</span></div>
+                <div class="ligne"><span class="label">P(gain) / P(remb.)</span><span class="val">{h['p_gain']*100:.1f}% / {h['p_remb']*100:.1f}%</span></div>
+                <div class="ligne"><span class="label">P(effective)</span><span class="val">{h['p']*100:.2f}%</span></div>
+                <div class="ligne"><span class="label">Cote</span><span class="val">{h['cote']}</span></div>
+                <div class="ligne"><span class="label">EV net</span><span class="val" style="color:{ev_color};">{h['ev']*100:+.2f}%</span></div>
+                <div class="ligne"><span class="label">Fiabilité</span><span class="val">{h['fiabilite']}</span></div>
+                <div class="ligne"><span class="label">Filtres</span><span class="val">{statut}</span></div>
+                {raisons_html}
+            </div>
+            """
+    else:
+        handicap_html = '<div class="box"><p style="color:#666;font-size:13px;">Aucun handicap saisi.</p></div>'
+
     scores_html = ""
     for s in r["top_3_scores"]:
         scores_html += f'<div class="ligne"><span class="label">#{s["rank"]}</span><span class="val">{s["score"]} — {s["probability"]*100:.2f}%</span></div>'
@@ -190,15 +237,18 @@ async def analyser(request: Request):
         <h2>🔬 Ajustements appliqués</h2>
         <div class="ligne"><span class="label">BP domicile (ctx / glob)</span><span class="val">{d['home_bp_ctx']} / {d['home_bp_glob']}</span></div>
         <div class="ligne"><span class="label">BP extérieur (ctx / glob)</span><span class="val">{d['away_bp_ctx']} / {d['away_bp_glob']}</span></div>
-        <div class="ligne"><span class="label">Facteur HT domicile</span><span class="val">{d['f_ht_home']}</span></div>
-        <div class="ligne"><span class="label">Facteur HT extérieur</span><span class="val">{d['f_ht_away']}</span></div>
-        <div class="ligne"><span class="label">Facteur classement dom.</span><span class="val">{d['f_class_home']}</span></div>
-        <div class="ligne"><span class="label">Facteur classement ext.</span><span class="val">{d['f_class_away']}</span></div>
+        <div class="ligne"><span class="label">Facteur HT dom.</span><span class="val">{d['f_ht_home']}</span></div>
+        <div class="ligne"><span class="label">Facteur HT ext.</span><span class="val">{d['f_ht_away']}</span></div>
+        <div class="ligne"><span class="label">Facteur forme dom.</span><span class="val">{d['f_forme_home']}</span></div>
+        <div class="ligne"><span class="label">Facteur forme ext.</span><span class="val">{d['f_forme_away']}</span></div>
+        <div class="ligne"><span class="label">Facteur class. dom.</span><span class="val">{d['f_class_home']}</span></div>
+        <div class="ligne"><span class="label">Facteur class. ext.</span><span class="val">{d['f_class_away']}</span></div>
+        <div class="ligne"><span class="label">Facteur H2H dom.</span><span class="val">{d['f_h2h_home']}</span></div>
+        <div class="ligne"><span class="label">Facteur H2H ext.</span><span class="val">{d['f_h2h_away']}</span></div>
         <div class="ligne"><span class="label">Facteur météo</span><span class="val">{d['f_meteo']}</span></div>
         <div class="ligne"><span class="label">Facteur enjeu</span><span class="val">{d['f_enjeu']}</span></div>
-        <div class="ligne"><span class="label">Facteur bless. dom.</span><span class="val">{d['f_bless_dom']}</span></div>
-        <div class="ligne"><span class="label">Facteur bless. ext.</span><span class="val">{d['f_bless_ext']}</span></div>
-        <div class="ligne"><span class="label">Facteur commun</span><span class="val">{d['f_commun']}</span></div>
+        <div class="ligne"><span class="label">Facteur bless. dom./ext.</span><span class="val">{d['f_bless_dom']} / {d['f_bless_ext']}</span></div>
+        <div class="ligne"><span class="label">Facteur fatigue dom./ext.</span><span class="val">{d['f_fatigue_dom']} / {d['f_fatigue_ext']}</span></div>
     </div>
     """
 
@@ -218,12 +268,11 @@ async def analyser(request: Request):
 
         <h1>🦁 QFTE V23.0 — Analyse</h1>
         <p style="text-align:center;color:#999;font-size:12px;">{equipe_domicile} vs {equipe_exterieur} — {competition}</p>
-        <p style="text-align:center;color:#666;font-size:11px;">Météo: {meteo} | Enjeu: {enjeu} | Bless. dom: {'Oui' if blessures_dom else 'Non'} | Bless. ext: {'Oui' if blessures_ext else 'Non'}</p>
 
         {decision_html}
 
         <div class="box">
-            <h2>⚽ Buts attendus (λ) ajustés</h2>
+            <h2>⚽ Buts attendus (λ)</h2>
             <div class="ligne"><span class="label">{equipe_domicile}</span><span class="val">{r['lambda_home']}</span></div>
             <div class="ligne"><span class="label">{equipe_exterieur}</span><span class="val">{r['lambda_away']}</span></div>
         </div>
@@ -240,10 +289,13 @@ async def analyser(request: Request):
             {scores_html}
         </div>
 
-        {details_html}
-
-        <h2 style="text-align:left;">📋 Détail des candidats</h2>
+        <h2 style="text-align:left;">📋 Détail — Marché 1X2</h2>
         {candidats_html}
+
+        <h2 style="text-align:left;">🎯 Détail — Marché Handicap</h2>
+        {handicap_html}
+
+        {details_html}
 
         <div style="text-align:center;margin:24px 0;">
             <button class="btn" onclick="sauvegarder()">💾 Sauvegarder cette analyse</button>
@@ -252,19 +304,15 @@ async def analyser(request: Request):
 
         <script>
         const ANALYSE = {analyse_json};
-
         function sauvegarder() {{
             try {{
                 let hist = JSON.parse(localStorage.getItem('qfte_analyses') || '[]');
-                // Éviter les doublons : si même match + même date_match, on remplace
                 hist = hist.filter(a => !(a.equipe_domicile === ANALYSE.equipe_domicile && a.equipe_exterieur === ANALYSE.equipe_exterieur && a.date_match === ANALYSE.date_match));
                 hist.unshift(ANALYSE);
                 if (hist.length > 200) hist = hist.slice(0, 200);
                 localStorage.setItem('qfte_analyses', JSON.stringify(hist));
-                alert('✅ Analyse sauvegardée ! Consulte /historique.');
-            }} catch(e) {{
-                alert('❌ Erreur : ' + e.message);
-            }}
+                alert('✅ Analyse sauvegardée !');
+            }} catch(e) {{ alert('❌ Erreur : ' + e.message); }}
         }}
         </script>
     </body>
@@ -273,9 +321,6 @@ async def analyser(request: Request):
     return HTMLResponse(content=html)
 
 
-# =========================================================
-# ROUTE HISTORIQUE
-# =========================================================
 HISTORIQUE_HTML = """
 <!DOCTYPE html>
 <html lang="fr">
@@ -286,12 +331,10 @@ HISTORIQUE_HTML = """
     <style>
         body { font-family: -apple-system, Arial, sans-serif; background: #0f0f1a; color: #eee; padding: 16px; line-height: 1.5; }
         h1 { color: #ffcc00; font-size: 20px; text-align: center; }
-        h2 { color: #ffcc00; font-size: 15px; margin-top: 10px; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 6px; }
         .box { background: #14141f; border: 1px solid #262636; border-radius: 10px; padding: 12px; margin-bottom: 14px; }
         .ligne { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
         .label { color: #999; }
         .val { color: #fff; font-weight: bold; }
-        a { color: #ffcc00; text-decoration: none; display: inline-block; margin-top: 20px; }
         .btn { display: inline-block; padding: 12px 16px; background: #ffcc00; color: #000; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; margin: 6px 4px 6px 0; text-decoration: none; }
         .btn-secondary { background: #262636; color: #ffcc00; }
         .btn-danger { background: #ef4444; color: #fff; }
@@ -305,37 +348,21 @@ HISTORIQUE_HTML = """
 </head>
 <body>
     <h1>📊 Historique QFTE V23.0</h1>
-
     <div style="text-align:center;margin-bottom:16px;">
         <a href="/" class="btn btn-secondary">← Nouvelle analyse</a>
         <button class="btn" onclick="exporter()">📤 Exporter JSON</button>
         <button class="btn btn-danger" onclick="vider()">🗑️ Vider</button>
     </div>
-
     <div id="compteur" style="text-align:center;color:#999;font-size:13px;margin-bottom:16px;"></div>
-
     <div id="liste"></div>
-
     <script>
-    function charger() {
-        let hist = [];
-        try { hist = JSON.parse(localStorage.getItem('qfte_analyses') || '[]'); } catch(e) {}
-        return hist;
-    }
-
+    function charger() { let h = []; try { h = JSON.parse(localStorage.getItem('qfte_analyses') || '[]'); } catch(e) {} return h; }
     function afficher() {
         const hist = charger();
         const liste = document.getElementById('liste');
         const compteur = document.getElementById('compteur');
-
-        if (hist.length === 0) {
-            compteur.textContent = '';
-            liste.innerHTML = '<div class="empty">Aucune analyse sauvegardée pour l\\'instant.<br>Lance une analyse et clique sur 💾 Sauvegarder.</div>';
-            return;
-        }
-
-        compteur.textContent = hist.length + ' analyse(s) sauvegardée(s)';
-
+        if (hist.length === 0) { compteur.textContent = ''; liste.innerHTML = '<div class="empty">Aucune analyse sauvegardée.</div>'; return; }
+        compteur.textContent = hist.length + ' analyse(s)';
         let html = '';
         hist.forEach((a, i) => {
             const r = a.resultats || {};
@@ -347,40 +374,32 @@ HISTORIQUE_HTML = """
                 else if (pari.niveau === 'PREMIUM') badge = '<span class="badge badge-premium">PREMIUM</span>';
                 else if (pari.niveau === 'GOOD') badge = '<span class="badge badge-good">GOOD</span>';
                 else badge = '<span class="badge badge-avoid">' + pari.niveau + '</span>';
-                resume = pari.selection + ' @ ' + pari.cote + ' (EV ' + (pari.ev*100).toFixed(2) + '%, fiab ' + pari.fiabilite + ')';
+                resume = pari.selection + ' @ ' + pari.cote + ' (EV ' + (pari.ev*100).toFixed(2) + '%)';
             }
-
             html += '<div class="box">';
             html += '<div class="ligne"><span class="label">#' + (i+1) + ' — ' + (a.date_analyse || '') + '</span><span class="val">' + badge + '</span></div>';
             html += '<div class="ligne"><span class="label">Match</span><span class="val">' + (a.equipe_domicile || '') + ' vs ' + (a.equipe_exterieur || '') + '</span></div>';
-            html += '<div class="ligne"><span class="label">Compétition</span><span class="val">' + (a.competition || '') + '</span></div>';
             html += '<div class="ligne"><span class="label">Résultat</span><span class="val">' + resume + '</span></div>';
             html += '</div>';
         });
         liste.innerHTML = html;
     }
-
     function exporter() {
         const hist = charger();
         if (hist.length === 0) { alert('Rien à exporter.'); return; }
-        const data = JSON.stringify(hist, null, 2);
-        const blob = new Blob([data], {type: 'application/json'});
+        const blob = new Blob([JSON.stringify(hist, null, 2)], {type: 'application/json'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = 'qfte_historique_' + new Date().toISOString().slice(0,10) + '.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
-
     function vider() {
-        if (!confirm('⚠️ Vider TOUT l\\'historique ? Cette action est irréversible.')) return;
+        if (!confirm('⚠️ Vider TOUT l\\'historique ?')) return;
         localStorage.removeItem('qfte_analyses');
         afficher();
     }
-
     afficher();
     </script>
 </body>
@@ -393,9 +412,6 @@ async def historique(request: Request):
     return HTMLResponse(content=HISTORIQUE_HTML)
 
 
-# =========================================================
-# HEALTH
-# =========================================================
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "V23.0"}
