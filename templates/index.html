@@ -3,22 +3,259 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ titre }}</title>
+    <title>QFTE V23.0 — Bot d'analyse</title>
     <style>
+        * { box-sizing: border-box; }
         body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, Arial, sans-serif;
             background: #0f0f1a;
-            color: #ffffff;
-            text-align: center;
-            padding: 40px 20px;
+            color: #eee;
+            margin: 0;
+            padding: 16px;
+            line-height: 1.4;
         }
-        h1 { color: #ffcc00; }
-        p  { color: #cccccc; }
+        h1 { color: #ffcc00; text-align: center; font-size: 22px; margin: 8px 0; }
+        h2 { color: #ffcc00; font-size: 16px; margin: 20px 0 8px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+        .subtitle { text-align: center; color: #999; font-size: 12px; margin-bottom: 20px; }
+        label { display: block; font-size: 13px; color: #bbb; margin: 10px 0 4px; }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            background: #1c1c2e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #eee;
+            font-size: 14px;
+        }
+        input:focus, select:focus { outline: none; border-color: #ffcc00; }
+        .row { display: flex; gap: 8px; }
+        .row > div { flex: 1; }
+        .match-line {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+        .match-line input { padding: 8px; font-size: 13px; }
+        .match-label { font-size: 11px; color: #888; text-align: center; margin-bottom: 4px; }
+        .sport-choice {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .sport-choice label {
+            flex: 1;
+            text-align: center;
+            padding: 12px;
+            background: #1c1c2e;
+            border: 2px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+        }
+        .sport-choice input { display: none; }
+        .sport-choice input:checked + span { color: #ffcc00; }
+        .sport-choice label:has(input:checked) { border-color: #ffcc00; background: #2a2a3e; }
+        .checkbox-line {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .checkbox-line input { width: auto; }
+        button {
+            width: 100%;
+            padding: 16px;
+            background: #ffcc00;
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 24px;
+            cursor: pointer;
+        }
+        button:active { background: #e6b800; }
+        .section-box {
+            background: #14141f;
+            border: 1px solid #262636;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
     </style>
 </head>
 <body>
-    <h1>🦁 {{ titre }}</h1>
-    <p>Bot en construction — Phase 2 terminée ✅</p>
-    <p>Prochaine étape : pipeline QFTE V23.0 (Phase 3).</p>
+
+    <h1>🦁 QFTE V23.0</h1>
+    <p class="subtitle">Bot d'analyse — Standards Sharp-Money</p>
+
+    <form action="/analyser" method="post">
+
+        <!-- ========== BLOC 1 : SPORT ========== -->
+        <div class="section-box">
+            <h2>🏟️ Sport</h2>
+            <div class="sport-choice">
+                <label>
+                    <input type="radio" name="sport" value="football" checked>
+                    <span>⚽ Football</span>
+                </label>
+                <label>
+                    <input type="radio" name="sport" value="basketball">
+                    <span>🏀 Basketball</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- ========== BLOC 2 : MATCH ========== -->
+        <div class="section-box">
+            <h2>📋 Match à analyser</h2>
+            <label>Compétition</label>
+            <input type="text" name="competition" placeholder="Ex : Ligue 1, NBA..." required>
+
+            <label>Équipe à domicile</label>
+            <input type="text" name="equipe_domicile" placeholder="Ex : PSG" required>
+
+            <label>Équipe à l'extérieur</label>
+            <input type="text" name="equipe_exterieur" placeholder="Ex : Marseille" required>
+
+            <label>Date du match</label>
+            <input type="date" name="date_match" required>
+        </div>
+
+        <!-- ========== BLOC 3 : 5 DERNIERS À DOMICILE ========== -->
+        <div class="section-box">
+            <h2>🏠 5 derniers matchs à domicile</h2>
+            <p style="font-size:12px;color:#888;">De l'équipe qui reçoit</p>
+
+            <div class="match-line">
+                <div class="match-label">Adversaire</div>
+                <div class="match-label">Buts pour</div>
+                <div class="match-label">Buts contre</div>
+            </div>
+            <div class="match-line">
+                <input type="text" name="home_adv_1" placeholder="Ex : Lyon">
+                <input type="number" name="home_bp_1" min="0" placeholder="3">
+                <input type="number" name="home_bc_1" min="0" placeholder="1">
+            </div>
+            <div class="match-line">
+                <input type="text" name="home_adv_2" placeholder="Adversaire 2">
+                <input type="number" name="home_bp_2" min="0" placeholder="BP">
+                <input type="number" name="home_bc_2" min="0" placeholder="BC">
+            </div>
+            <div class="match-line">
+                <input type="text" name="home_adv_3" placeholder="Adversaire 3">
+                <input type="number" name="home_bp_3" min="0" placeholder="BP">
+                <input type="number" name="home_bc_3" min="0" placeholder="BC">
+            </div>
+            <div class="match-line">
+                <input type="text" name="home_adv_4" placeholder="Adversaire 4">
+                <input type="number" name="home_bp_4" min="0" placeholder="BP">
+                <input type="number" name="home_bc_4" min="0" placeholder="BC">
+            </div>
+            <div class="match-line">
+                <input type="text" name="home_adv_5" placeholder="Adversaire 5">
+                <input type="number" name="home_bp_5" min="0" placeholder="BP">
+                <input type="number" name="home_bc_5" min="0" placeholder="BC">
+            </div>
+        </div>
+
+        <!-- ========== BLOC 4 : 5 DERNIERS À L'EXTÉRIEUR ========== -->
+        <div class="section-box">
+            <h2>✈️ 5 derniers matchs à l'extérieur</h2>
+            <p style="font-size:12px;color:#888;">De l'équipe qui se déplace</p>
+
+            <div class="match-line">
+                <div class="match-label">Adversaire</div>
+                <div class="match-label">Buts pour</div>
+                <div class="match-label">Buts contre</div>
+            </div>
+            <div class="match-line">
+                <input type="text" name="away_adv_1" placeholder="Ex : Nice">
+                <input type="number" name="away_bp_1" min="0" placeholder="2">
+                <input type="number" name="away_bc_1" min="0" placeholder="1">
+            </div>
+            <div class="match-line">
+                <input type="text" name="away_adv_2" placeholder="Adversaire 2">
+                <input type="number" name="away_bp_2" min="0" placeholder="BP">
+                <input type="number" name="away_bc_2" min="0" placeholder="BC">
+            </div>
+            <div class="match-line">
+                <input type="text" name="away_adv_3" placeholder="Adversaire 3">
+                <input type="number" name="away_bp_3" min="0" placeholder="BP">
+                <input type="number" name="away_bc_3" min="0" placeholder="BC">
+            </div>
+            <div class="match-line">
+                <input type="text" name="away_adv_4" placeholder="Adversaire 4">
+                <input type="number" name="away_bp_4" min="0" placeholder="BP">
+                <input type="number" name="away_bc_4" min="0" placeholder="BC">
+            </div>
+            <div class="match-line">
+                <input type="text" name="away_adv_5" placeholder="Adversaire 5">
+                <input type="number" name="away_bp_5" min="0" placeholder="BP">
+                <input type="number" name="away_bc_5" min="0" placeholder="BC">
+            </div>
+        </div>
+
+        <!-- ========== BLOC 5 : COTES ========== -->
+        <div class="section-box">
+            <h2>📈 Cotes du match</h2>
+
+            <label>Ouverture — 1 / X / 2</label>
+            <div class="row">
+                <div><input type="number" step="0.01" name="open_1" placeholder="1" required></div>
+                <div><input type="number" step="0.01" name="open_x" placeholder="X"></div>
+                <div><input type="number" step="0.01" name="open_2" placeholder="2" required></div>
+            </div>
+
+            <label>Actuelles — 1 / X / 2</label>
+            <div class="row">
+                <div><input type="number" step="0.01" name="curr_1" placeholder="1" required></div>
+                <div><input type="number" step="0.01" name="curr_x" placeholder="X"></div>
+                <div><input type="number" step="0.01" name="curr_2" placeholder="2" required></div>
+            </div>
+        </div>
+
+        <!-- ========== BLOC 6 : CONTEXTE ========== -->
+        <div class="section-box">
+            <h2>🎚️ Contexte</h2>
+
+            <label>Météo</label>
+            <select name="meteo">
+                <option value="normale">Normale</option>
+                <option value="pluie">Pluie</option>
+                <option value="neige">Neige</option>
+                <option value="chaleur_extreme">Chaleur extrême</option>
+                <option value="vent_fort">Vent fort</option>
+            </select>
+
+            <label>Enjeu du match</label>
+            <select name="enjeu">
+                <option value="normal">Normal</option>
+                <option value="derby">Derby / Rivalité</option>
+                <option value="finale">Finale / Match décisif</option>
+                <option value="fin_saison">Fin de saison</option>
+                <option value="relegation">Lutte pour le maintien</option>
+            </select>
+
+            <div class="checkbox-line">
+                <input type="checkbox" name="blessures_domicile" id="bless_dom">
+                <label for="bless_dom" style="margin:0;">Blessures importantes — équipe domicile</label>
+            </div>
+
+            <div class="checkbox-line">
+                <input type="checkbox" name="blessures_exterieur" id="bless_ext">
+                <label for="bless_ext" style="margin:0;">Blessures importantes — équipe extérieur</label>
+            </div>
+
+            <label>Notes libres (facultatif)</label>
+            <textarea name="notes" rows="3" placeholder="Ex : arbitre strict, terrain dégradé..."></textarea>
+        </div>
+
+        <!-- ========== BOUTON ========== -->
+        <button type="submit">🔍 Analyser le match</button>
+
+    </form>
+
 </body>
-</html>
+    </html>
