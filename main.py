@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request, Form
+import re
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -6,6 +7,66 @@ from qfte_engine.mvp import analyser_match_football
 
 app = FastAPI(title="QFTE Bot V23.0")
 templates = Jinja2Templates(directory="templates")
+
+
+# =========================================================
+# PARSER — Convertit "3-1 (1-0), 2-2" en liste de matchs
+# =========================================================
+def parser_matchs(texte):
+    """
+    Parse une chaîne comme :
+    "3-1 (1-0), 2-2, 4-0 (2-0)"
+    et retourne une liste de dict :
+    [{'bp':3, 'bc':1, 'ht_bp':1, 'ht_bc':0}, ...]
+    """
+    resultats = []
+    if not texte:
+        return resultats
+
+    # Séparer par virgules
+    morceaux = [m.strip() for m in texte.split(",") if m.strip()]
+
+    for m in morceaux:
+        # Format avec HT : 3-1 (1-0)
+        match_ht = re.match(r"^(\d+)\s*-\s*(\d+)\s*\(\s*(\d+)\s*-\s*(\d+)\s*\)$", m)
+        # Format sans HT : 3-1
+        match_simple = re.match(r"^(\d+)\s*-\s*(\d+)$", m)
+
+        if match_ht:
+            resultats.append({
+                "bp": int(match_ht.group(1)),
+                "bc": int(match_ht.group(2)),
+                "ht_bp": int(match_ht.group(3)),
+                "ht_bc": int(match_ht.group(4)),
+            })
+        elif match_simple:
+            resultats.append({
+                "bp": int(match_simple.group(1)),
+                "bc": int(match_simple.group(2)),
+                "ht_bp": None,
+                "ht_bc": None,
+            })
+        # Sinon : on ignore le morceau invalide
+
+    return resultats
+
+
+def moyenne(valeurs):
+    """Moyenne en ignorant les valeurs None ou vides."""
+    v = [x for x in valeurs if x is not None and x > 0]
+    if not v:
+        return 0.0
+    return sum(v) / len(v)
+
+
+def ffloat(form, key, default=0.0):
+    v = form.get(key, "")
+    if v is None or v == "":
+        return default
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return default
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -17,43 +78,48 @@ async def accueil(request: Request):
 
 
 @app.post("/analyser", response_class=HTMLResponse)
-async def analyser(
-    request: Request,
-    sport: str = Form(...),
-    competition: str = Form(...),
-    equipe_domicile: str = Form(...),
-    equipe_exterieur: str = Form(...),
-    date_match: str = Form(...),
-    home_adv_1: str = Form(""), home_bp_1: int = Form(0), home_bc_1: int = Form(0),
-    home_adv_2: str = Form(""), home_bp_2: int = Form(0), home_bc_2: int = Form(0),
-    home_adv_3: str = Form(""), home_bp_3: int = Form(0), home_bc_3: int = Form(0),
-    home_adv_4: str = Form(""), home_bp_4: int = Form(0), home_bc_4: int = Form(0),
-    home_adv_5: str = Form(""), home_bp_5: int = Form(0), home_bc_5: int = Form(0),
-    away_adv_1: str = Form(""), away_bp_1: int = Form(0), away_bc_1: int = Form(0),
-    away_adv_2: str = Form(""), away_bp_2: int = Form(0), away_bc_2: int = Form(0),
-    away_adv_3: str = Form(""), away_bp_3: int = Form(0), away_bc_3: int = Form(0),
-    away_adv_4: str = Form(""), away_bp_4: int = Form(0), away_bc_4: int = Form(0),
-    away_adv_5: str = Form(""), away_bp_5: int = Form(0), away_bc_5: int = Form(0),
-    open_1: float = Form(...), open_x: float = Form(0), open_2: float = Form(...),
-    curr_1: float = Form(...), curr_x: float = Form(0), curr_2: float = Form(...),
-    meteo: str = Form("normale"),
-    enjeu: str = Form("normal"),
-    blessures_domicile: str = Form(None),
-    blessures_exterieur: str = Form(None),
-    notes: str = Form(""),
-):
-    home_bp_moy = (home_bp_1 + home_bp_2 + home_bp_3 + home_bp_4 + home_bp_5) / 5.0
-    home_bc_moy = (home_bc_1 + home_bc_2 + home_bc_3 + home_bc_4 + home_bc_5) / 5.0
-    away_bp_moy = (away_bp_1 + away_bp_2 + away_bp_3 + away_bp_4 + away_bp_5) / 5.0
-    away_bc_moy = (away_bc_1 + away_bc_2 + away_bc_3 + away_bc_4 + away_bc_5) / 5.0
+async def analyser(request: Request):
+    form = await request.form()
 
+    sport = form.get("sport", "football")
+    competition = form.get("competition", "")
+    equipe_domicile = form.get("equipe_domicile", "")
+    equipe_exterieur = form.get("equipe_exterieur", "")
+    date_match = form.get("date_match", "")
+
+    # Parsing des 4 sections compactes
+    home_contextuel = parser_matchs(form.get("home_contextuel", ""))
+    home_global = parser_matchs(form.get("home_global", ""))
+    away_contextuel = parser_matchs(form.get("away_contextuel", ""))
+    away_global = parser_matchs(form.get("away_global", ""))
+
+    # Pour l'instant, on utilise UNIQUEMENT le contexte (comme avant)
+    home_bp_moy = moyenne([m["bp"] for m in home_contextuel])
+    home_bc_moy = moyenne([m["bc"] for m in home_contextuel])
+    away_bp_moy = moyenne([m["bp"] for m in away_contextuel])
+    away_bc_moy = moyenne([m["bc"] for m in away_contextuel])
+
+    # Cotes
+    open_1 = ffloat(form, "open_1")
+    open_x = ffloat(form, "open_x")
+    open_2 = ffloat(form, "open_2")
+    curr_1 = ffloat(form, "curr_1")
+    curr_x = ffloat(form, "curr_x")
+    curr_2 = ffloat(form, "curr_2")
+
+    meteo = form.get("meteo", "normale")
+    enjeu = form.get("enjeu", "normal")
+    blessures_domicile = form.get("blessures_domicile") is not None
+    blessures_exterieur = form.get("blessures_exterieur") is not None
+
+    # Appel moteur
     r = analyser_match_football(
         home_bp_moy, home_bc_moy, away_bp_moy, away_bc_moy,
         open_1, open_x, open_2,
         curr_1, curr_x, curr_2
     )
 
-    # ---- Bloc DÉCISION FINALE ----
+    # Bloc décision
     if r["pari_retenu"]:
         p = r["pari_retenu"]
         decision_html = f"""
@@ -73,14 +139,10 @@ async def analyser(
         decision_html = """
         <div class="box" style="border:2px solid #ef4444;">
             <h2 style="color:#ef4444;">🔴 AUCUN PARI RETENU</h2>
-            <p style="color:#ccc;font-size:13px;">
-            Aucune sélection ne respecte les filtres de discipline V23.0
-            (Fiabilité ≥ 0.75, Value ≥ 5%, Confiance ≥ 70%).
-            </p>
+            <p style="color:#ccc;font-size:13px;">Aucune sélection ne respecte les filtres V23.0.</p>
         </div>
         """
 
-    # ---- Bloc candidats analysés ----
     candidats_html = ""
     for c in r["candidats"]:
         ev_color = "#4ade80" if c["ev"] >= 0 else "#ef4444"
@@ -90,7 +152,6 @@ async def analyser(
         else:
             statut = '<span style="color:#ef4444;font-weight:bold;">❌ REJETÉ</span>'
             raisons_html = "".join([f'<div class="ligne"><span class="label" style="color:#ef4444;font-size:12px;">→ {x}</span></div>' for x in c["raisons_rejet"]])
-
         candidats_html += f"""
         <div class="box">
             <div class="ligne"><span class="label">Sélection</span><span class="val">{c['selection']}</span></div>
@@ -105,12 +166,14 @@ async def analyser(
 
     scores_html = ""
     for s in r["top_3_scores"]:
-        scores_html += f"""
-        <div class="ligne">
-            <span class="label">#{s['rank']}</span>
-            <span class="val">{s['score']} — {s['probability']*100:.2f}%</span>
-        </div>
-        """
+        scores_html += f'<div class="ligne"><span class="label">#{s["rank"]}</span><span class="val">{s["score"]} — {s["probability"]*100:.2f}%</span></div>'
+
+    # Info parsing (debug utile)
+    parsing_info = f"""
+    <p style="text-align:center;color:#666;font-size:11px;">
+    Matchs parsés : Dom. contextuel={len(home_contextuel)} | Dom. global={len(home_global)} | Ext. contextuel={len(away_contextuel)} | Ext. global={len(away_global)}
+    </p>
+    """
 
     html = f"""
     <!DOCTYPE html>
@@ -133,6 +196,8 @@ async def analyser(
     <body>
         <h1>🦁 QFTE V23.0 — Analyse</h1>
         <p style="text-align:center;color:#999;font-size:12px;">{equipe_domicile} vs {equipe_exterieur} — {competition}</p>
+        <p style="text-align:center;color:#666;font-size:11px;">Météo: {meteo} | Enjeu: {enjeu} | Blessures dom: {'Oui' if blessures_domicile else 'Non'} | Blessures ext: {'Oui' if blessures_exterieur else 'Non'}</p>
+        {parsing_info}
 
         {decision_html}
 
