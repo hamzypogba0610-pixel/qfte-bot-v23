@@ -42,7 +42,6 @@
 
     <form action="/analyser" method="post">
 
-        <!-- SPORT -->
         <div class="section-box">
             <h2>🏟️ Sport</h2>
             <div class="sport-choice" style="margin-top:10px;">
@@ -51,7 +50,6 @@
             </div>
         </div>
 
-        <!-- MATCH -->
         <div class="section-box">
             <h2>📋 Match à analyser</h2>
             <label>Compétition</label>
@@ -64,16 +62,15 @@
             <input type="date" name="date_match" required>
         </div>
 
-        <!-- FORMAT COMPACT INFO -->
         <div class="section-box" style="background:#0a1a2a;border-color:#1e3a5f;">
             <h2 style="color:#4ea8ff;">💡 Format compact</h2>
             <p style="font-size:12px;color:#aac;margin:8px 0 0 0;">
             Scores : <b>BP-BC (HT_BP-HT_BC)</b><br>
-            Handicap : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b>
+            Handicap : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b><br>
+            O/U buts : <b>Ligne/Cote_Over/Cote_Under</b>
             </p>
         </div>
 
-        <!-- SECTION 1 : DOMICILE CONTEXTUEL -->
         <details open>
             <summary>🏠 Domicile — 5 derniers à domicile</summary>
             <div class="details-content">
@@ -81,7 +78,6 @@
             </div>
         </details>
 
-        <!-- SECTION 2 : DOMICILE GLOBAL -->
         <details>
             <summary>🌍 Domicile — 5 derniers globaux</summary>
             <div class="details-content">
@@ -89,7 +85,6 @@
             </div>
         </details>
 
-        <!-- SECTION 3 : EXTÉRIEUR CONTEXTUEL -->
         <details>
             <summary>✈️ Extérieur — 5 derniers à l'extérieur</summary>
             <div class="details-content">
@@ -97,7 +92,6 @@
             </div>
         </details>
 
-        <!-- SECTION 4 : EXTÉRIEUR GLOBAL -->
         <details>
             <summary>🌍 Extérieur — 5 derniers globaux</summary>
             <div class="details-content">
@@ -105,7 +99,6 @@
             </div>
         </details>
 
-        <!-- H2H -->
         <details>
             <summary>⚔️ H2H — 3 dernières confrontations</summary>
             <div class="details-content">
@@ -113,7 +106,6 @@
             </div>
         </details>
 
-        <!-- CLASSEMENT -->
         <details>
             <summary>🏆 Classement</summary>
             <div class="details-content">
@@ -132,7 +124,6 @@
             </div>
         </details>
 
-        <!-- COTES 1X2 -->
         <details>
             <summary>📈 Cotes 1X2</summary>
             <div class="details-content">
@@ -151,18 +142,24 @@
             </div>
         </details>
 
-        <!-- HANDICAP ASIATIQUE -->
         <details>
             <summary>🎯 Handicap asiatique</summary>
             <div class="details-content">
                 <p class="hint">Format : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b>, sépare par des virgules.</p>
-                <label>Lignes de handicap</label>
                 <input type="text" name="handicap" placeholder="Ex : -0.5/1.90/+0.5/1.95, -1.5/2.10/+1.5/1.75">
                 <div class="example">Exemple : -0.5/1.90/+0.5/1.95, -1.5/2.10/+1.5/1.75, -2.5/3.20/+2.5/1.35</div>
             </div>
         </details>
 
-        <!-- CONTEXTE -->
+        <details>
+            <summary>⚽ Over / Under Buts</summary>
+            <div class="details-content">
+                <p class="hint">Format : <b>Ligne/Cote_Over/Cote_Under</b>, sépare par des virgules.</p>
+                <input type="text" name="ou_buts" placeholder="Ex : 2.5/1.85/1.95, 3.5/2.40/1.55">
+                <div class="example">Exemple : 1.5/3.20/1.35, 2.5/1.85/1.95, 3.5/2.40/1.55, 4.5/3.50/1.30</div>
+            </div>
+        </details>
+
         <details>
             <summary>🎚️ Contexte</summary>
             <div class="details-content">
@@ -208,4 +205,4 @@
     </form>
 
 </body>
-                             </html>
+                    </html>
