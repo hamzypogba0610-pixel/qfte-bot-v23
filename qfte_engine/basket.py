@@ -2,15 +2,12 @@
 qfte_engine/basket.py
 ---------------------
 Moteur QFTE V23.0 - Basketball multi-ligues.
-Sigma dynamique selon le championnat.
+Sigma dynamique + Pace/OffRtg/DefRtg + Back-to-back.
 """
 
 import math
 
 
-# =========================================================
-# 1. SIGMA PAR LIGUE (FT, MT)
-# =========================================================
 SIGMA_PAR_LIGUE = {
     "nba": (11.5, 8.0),
     "euroleague": (9.0, 7.0),
@@ -30,9 +27,6 @@ def get_sigmas(ligue):
     return SIGMA_PAR_LIGUE.get(ligue, (10.5, 7.5))
 
 
-# =========================================================
-# 2. HELPERS
-# =========================================================
 def norm_cdf(x, mu=0.0, sigma=1.0):
     if sigma <= 0:
         return 0.0 if x < mu else 1.0
@@ -46,9 +40,6 @@ def moy(vals):
     return sum(v) / len(v)
 
 
-# =========================================================
-# 3. AJUSTEMENTS BASKET
-# =========================================================
 def facteur_blessures(a):
     return 0.92 if a else 1.00
 
@@ -74,9 +65,6 @@ def facteur_h2h(h2h):
     return (round(1.0 + a, 3), round(1.0 - a, 3))
 
 
-# =========================================================
-# 4. EV / FIABILITE / STAKE
-# =========================================================
 def compute_ev(p, cote):
     if cote <= 0:
         return 0.0
@@ -106,9 +94,6 @@ def compute_stake(p, cote, fiab, ev):
     return round(max(min(f_star * lam * 100, plaf), 0.0), 2)
 
 
-# =========================================================
-# 5. FILTRES
-# =========================================================
 SEUIL_FIABILITE = 0.75
 SEUIL_VALUE = 0.04
 SEUIL_CONFIANCE = 0.70
@@ -138,9 +123,6 @@ def classify(fiab, ev):
         return "EVITER", "AVOID"
 
 
-# =========================================================
-# 6. CANDIDAT GENERIQUE
-# =========================================================
 def eval_candidat(label, p, cote, marche=None):
     if not cote or cote <= 0:
         return None
@@ -166,10 +148,14 @@ def eval_candidat(label, p, cote, marche=None):
 
 
 # =========================================================
-# 7. CALCUL DES POINTS ATTENDUS
+# CALCUL DES POINTS ATTENDUS (AVEC PACE/OFFRTG/DEFRTG)
 # =========================================================
-def compute_lambdas_basket(home_ctx, home_glob, away_ctx, away_glob,
-                            h2h, bd, be, fd, fe, pd, pe, te):
+def compute_lambdas_basket(
+    home_ctx, home_glob, away_ctx, away_glob,
+    h2h, bd, be, fd, fe, pd, pe, te,
+    pace_dom=None, offrtg_dom=None, defrtg_dom=None,
+    pace_ext=None, offrtg_ext=None, defrtg_ext=None
+):
     hbp_ctx = moy([m["bp"] for m in home_ctx])
     hbc_ctx = moy([m["bc"] for m in home_ctx])
     abp_ctx = moy([m["bp"] for m in away_ctx])
@@ -185,9 +171,30 @@ def compute_lambdas_basket(home_ctx, home_glob, away_ctx, away_glob,
     abp = 0.7 * abp_ctx + 0.3 * abp_g
     abc = 0.7 * abc_ctx + 0.3 * abc_g
 
-    mu_home = (hbp + abc) / 2.0
-    mu_away = (abp + hbc) / 2.0
+    # MU de base (basé sur les scores passés)
+    mu_home_base = (hbp + abc) / 2.0
+    mu_away_base = (abp + hbc) / 2.0
 
+    # === AJUSTEMENT PACE / OFFRTG / DEFRTG (si fournis) ===
+    pace_applique = False
+    if all(v is not None and v > 0 for v in [pace_dom, offrtg_dom, defrtg_dom, pace_ext, offrtg_ext, defrtg_ext]):
+        # Pace moyen du match
+        pace_moy = (pace_dom + pace_ext) / 2.0
+
+        # Points attendus selon formule NBA : (OffRtg × DefRtg adversaire) / 100 × (Pace / 100)
+        # Version simplifiée : mu = OffRtg_équipe × (DefRtg_adversaire / 100) × (Pace_moy / 100)
+        mu_home_avance = (offrtg_dom * defrtg_ext / 100.0) * (pace_moy / 100.0)
+        mu_away_avance = (offrtg_ext * defrtg_dom / 100.0) * (pace_moy / 100.0)
+
+        # Fusion 60% avancé / 40% base (on garde une part des scores récents)
+        mu_home = 0.6 * mu_home_avance + 0.4 * mu_home_base
+        mu_away = 0.6 * mu_away_avance + 0.4 * mu_away_base
+        pace_applique = True
+    else:
+        mu_home = mu_home_base
+        mu_away = mu_away_base
+
+    # FACTEURS
     fc_h, fc_a = facteur_classement(pd, pe, te)
     mu_home *= fc_h
     mu_away *= fc_a
@@ -209,6 +216,9 @@ def compute_lambdas_basket(home_ctx, home_glob, away_ctx, away_glob,
         "home_bp_glob": round(hbp_g, 1),
         "away_bp_ctx": round(abp_ctx, 1),
         "away_bp_glob": round(abp_g, 1),
+        "mu_home_base": round(mu_home_base, 1),
+        "mu_away_base": round(mu_away_base, 1),
+        "pace_applique": pace_applique,
         "f_class_home": fc_h,
         "f_class_away": fc_a,
         "f_h2h_home": fh2h_h,
@@ -220,9 +230,6 @@ def compute_lambdas_basket(home_ctx, home_glob, away_ctx, away_glob,
     }
 
 
-# =========================================================
-# 8. PROBAS MONEYLINE / SPREAD / TOTAL
-# =========================================================
 def proba_moneyline(mu_home, mu_away, sigma):
     mu_diff = mu_home - mu_away
     sigma_diff = sigma * math.sqrt(2)
@@ -244,23 +251,19 @@ def proba_total(mu_total, ligne, sigma):
     return p_over, p_under
 
 
-# =========================================================
-# 9. RATIOS MI-TEMPS BASKET
-# =========================================================
 RATIO_1H = 0.51
 RATIO_2H = 0.49
 
 
-# =========================================================
-# 10. ANALYSE COMPLETE BASKET
-# =========================================================
 def analyser_match_basket(
     home_ctx, home_glob, away_ctx, away_glob,
     h2h_matchs, hcp_lignes, ou_lignes,
     bd, be, fd, fe, pd, pe, te,
     ml_ft=None, ml_1h=None, ml_2h=None,
     total_1h=None, total_2h=None,
-    ligue=None
+    ligue=None,
+    pace_dom=None, offrtg_dom=None, defrtg_dom=None,
+    pace_ext=None, offrtg_ext=None, defrtg_ext=None
 ):
     if h2h_matchs is None:
         h2h_matchs = []
@@ -273,7 +276,9 @@ def analyser_match_basket(
 
     mu_home, mu_away, details = compute_lambdas_basket(
         home_ctx, home_glob, away_ctx, away_glob,
-        h2h_matchs, bd, be, fd, fe, pd, pe, te
+        h2h_matchs, bd, be, fd, fe, pd, pe, te,
+        pace_dom, offrtg_dom, defrtg_dom,
+        pace_ext, offrtg_ext, defrtg_ext
     )
     mu_total = mu_home + mu_away
 
@@ -417,4 +422,4 @@ def analyser_match_basket(
         "ml_2h_candidats": ml_2h_candidats,
         "total_2h_candidats": total_2h_candidats,
         "pari_retenu": pari_retenu,
-    }
+        }
