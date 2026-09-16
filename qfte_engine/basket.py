@@ -2,10 +2,16 @@
 qfte_engine/basket.py
 ---------------------
 Moteur QFTE V23.0 - Basketball multi-ligues.
-Sigma dynamique + Pace/OffRtg/DefRtg + Back-to-back + Q1-Q4.
+Sigma dynamique + QFTE SIGNATURE True Sigma + Pace/OffRtg/DefRtg + Q1-Q4.
 """
 
 import math
+from qfte_engine.signature import (
+    analyser_true_sigma,
+    sigma_mt_depuis_ft,
+    sigma_quart_depuis_ft,
+    get_sigma_ligue,
+)
 
 
 SIGMA_PAR_LIGUE = {
@@ -214,7 +220,7 @@ def compute_lambdas_basket(
         "f_bless_ext": facteur_blessures(be),
         "f_fatigue_dom": facteur_fatigue(fd),
         "f_fatigue_ext": facteur_fatigue(fe),
-            }
+    }
 
 
 
@@ -245,7 +251,6 @@ RATIO_Q1 = 0.27
 RATIO_Q2 = 0.24
 RATIO_Q3 = 0.25
 RATIO_Q4 = 0.24
-SIGMA_QUART = 6.0
 
 
 def analyser_match_basket(
@@ -266,7 +271,11 @@ def analyser_match_basket(
     if ou_lignes is None:
         ou_lignes = []
 
-    sigma_ft, sigma_mt = get_sigmas(ligue)
+    # === QFTE SIGNATURE - True Sigma ===
+    signature = analyser_true_sigma(home_ctx, away_ctx, home_glob, away_glob, ligue)
+    sigma_ft = signature["sigma_final"]
+    sigma_mt = sigma_mt_depuis_ft(sigma_ft)
+    sigma_quart = sigma_quart_depuis_ft(sigma_ft)
 
     mu_home, mu_away, details = compute_lambdas_basket(
         home_ctx, home_glob, away_ctx, away_glob,
@@ -389,7 +398,7 @@ def analyser_match_basket(
                 ligne_q = total_cfg[0]
                 co_q = total_cfg[1]
                 cu_q = total_cfg[2]
-                p_o, p_u = proba_total(mu_q, ligne_q, SIGMA_QUART)
+                p_o, p_u = proba_total(mu_q, ligne_q, sigma_quart)
                 c = eval_candidat(nom + " Over " + str(ligne_q), p_o, co_q, "Total " + nom)
                 if c:
                     resultats_q["total"].append(c)
@@ -397,7 +406,7 @@ def analyser_match_basket(
                 if c:
                     resultats_q["total"].append(c)
             if ml_cfg and len(ml_cfg) == 2:
-                p_h, p_a = proba_moneyline(mu_h, mu_a, SIGMA_QUART)
+                p_h, p_a = proba_moneyline(mu_h, mu_a, sigma_quart)
                 c = eval_candidat(nom + " - Domicile", p_h, ml_cfg[0], "Moneyline " + nom)
                 if c:
                     resultats_q["ml"].append(c)
@@ -426,6 +435,12 @@ def analyser_match_basket(
             pari_retenu = c
             break
 
+    # Appliquer le multiplicateur de stake (QFTE SIGNATURE)
+    if pari_retenu:
+        multi = signature["multiplicateur_stake"]
+        pari_retenu["stake_origine"] = pari_retenu["stake"]
+        pari_retenu["stake"] = round(pari_retenu["stake"] * multi, 2)
+
     return {
         "mu_home": round(mu_home, 1),
         "mu_away": round(mu_away, 1),
@@ -434,6 +449,8 @@ def analyser_match_basket(
         "mu_total_2h": round(mu_total_2h, 1),
         "sigma_ft": sigma_ft,
         "sigma_mt": sigma_mt,
+        "sigma_quart": sigma_quart,
+        "signature": signature,
         "details": details,
         "p_ml_home": round(p_ml_home, 4),
         "p_ml_away": round(p_ml_away, 4),
@@ -450,4 +467,4 @@ def analyser_match_basket(
         "total_2h_candidats": total_2h_candidats,
         "quarts": quarts_resultats,
         "pari_retenu": pari_retenu,
-    }
+            }
