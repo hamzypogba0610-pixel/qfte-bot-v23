@@ -70,7 +70,6 @@
             O/U buts : <b>Ligne/Cote_Over/Cote_Under</b>
             </p>
         </div>
-
         <details open>
             <summary>🏠 Domicile — 5 derniers à domicile</summary>
             <div class="details-content">
@@ -125,7 +124,7 @@
         </details>
 
         <details>
-            <summary>📈 Cotes 1X2</summary>
+            <summary>📈 Cotes 1X2 (temps plein)</summary>
             <div class="details-content">
                 <label>Ouverture — 1 / X / 2</label>
                 <div class="row">
@@ -138,6 +137,25 @@
                     <div><input type="number" step="0.01" name="curr_1" placeholder="1" required></div>
                     <div><input type="number" step="0.01" name="curr_x" placeholder="X"></div>
                     <div><input type="number" step="0.01" name="curr_2" placeholder="2" required></div>
+                </div>
+            </div>
+        </details>
+
+        <details>
+            <summary>🕐 Mode 2 mi-temps (HT + 2H)</summary>
+            <div class="details-content">
+                <p class="hint">Cotes 1X2 à la mi-temps (HT) et en 2ème mi-temps (2H). Optionnel.</p>
+                <label>1X2 à la mi-temps (HT)</label>
+                <div class="row">
+                    <div><input type="number" step="0.01" name="ht_1" placeholder="HT 1"></div>
+                    <div><input type="number" step="0.01" name="ht_x" placeholder="HT X"></div>
+                    <div><input type="number" step="0.01" name="ht_2" placeholder="HT 2"></div>
+                </div>
+                <label>1X2 en 2ème mi-temps (2H)</label>
+                <div class="row">
+                    <div><input type="number" step="0.01" name="h2_1" placeholder="2H 1"></div>
+                    <div><input type="number" step="0.01" name="h2_x" placeholder="2H X"></div>
+                    <div><input type="number" step="0.01" name="h2_2" placeholder="2H 2"></div>
                 </div>
             </div>
         </details>
