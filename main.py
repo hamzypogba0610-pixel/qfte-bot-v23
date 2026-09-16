@@ -101,6 +101,16 @@ def fi(form, k):
         return None
 
 
+def fopt(form, k):
+    v = form.get(k, "")
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except:
+        return None
+
+
 def bloc_candidat(c):
     ec = "#4ade80" if c["ev"] >= 0 else "#ef4444"
     if c["passe_filtres"]:
@@ -174,6 +184,14 @@ async def analyser(request: Request):
     pe = fi(form, "pos_ext")
     te = fi(form, "total_equipes")
 
+    # Stats avancees (basket)
+    pace_dom = fopt(form, "pace_dom")
+    offrtg_dom = fopt(form, "offrtg_dom")
+    defrtg_dom = fopt(form, "defrtg_dom")
+    pace_ext = fopt(form, "pace_ext")
+    offrtg_ext = fopt(form, "offrtg_ext")
+    defrtg_ext = fopt(form, "defrtg_ext")
+
     if sport == "basketball":
         ml_ft = parse_ml(form.get("ml_ft", ""))
         ml_1h = parse_ml(form.get("ml_1h", ""))
@@ -186,7 +204,9 @@ async def analyser(request: Request):
             h2h, hcp_lignes, ou_lignes,
             bd, be, fd, fe, pd, pe, te,
             ml_ft, ml_1h, ml_2h, total_1h, total_2h,
-            ligue
+            ligue,
+            pace_dom, offrtg_dom, defrtg_dom,
+            pace_ext, offrtg_ext, defrtg_ext
         )
     else:
         r = analyser_match_football(
@@ -306,10 +326,12 @@ async def analyser(request: Request):
         html += '<div class="box"><h2>Ajustements appliques</h2>'
         html += '<div class="ligne"><span class="label">BP dom (ctx/glob)</span><span class="val">' + str(d["home_bp_ctx"]) + ' / ' + str(d["home_bp_glob"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">BP ext (ctx/glob)</span><span class="val">' + str(d["away_bp_ctx"]) + ' / ' + str(d["away_bp_glob"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Mu base dom / ext</span><span class="val">' + str(d["mu_home_base"]) + ' / ' + str(d["mu_away_base"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Pace applique</span><span class="val">' + ("Oui" if d["pace_applique"] else "Non") + '</span></div>'
         html += '<div class="ligne"><span class="label">Facteur classement</span><span class="val">' + str(d["f_class_home"]) + ' / ' + str(d["f_class_away"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Facteur H2H</span><span class="val">' + str(d["f_h2h_home"]) + ' / ' + str(d["f_h2h_away"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Blessures</span><span class="val">' + str(d["f_bless_dom"]) + ' / ' + str(d["f_bless_ext"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Fatigue</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Fatigue / B2B</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
         html += '</div>'
 
 
