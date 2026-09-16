@@ -159,9 +159,9 @@
                 <label>DefRtg — Extérieur</label>
                 <input type="number" step="0.1" name="defrtg_ext" placeholder="Ex : 112.0">
             </div>
-    </details>
+            </details>
 
-       
+        
         <details>
             <summary>📈 Cotes 1X2 (Foot) / Moneyline FT (Basket)</summary>
             <div class="details-content">
@@ -219,6 +219,25 @@
                 <label>Total Points 2ème mi-temps (2H)</label>
                 <input type="text" name="total_2h" placeholder="Ex : 105.5/1.85/1.95">
                 <div class="example">Format : Ligne/Cote_Over/Cote_Under</div>
+            </div>
+        </details>
+
+        <details>
+            <summary>🕐 Quarts-temps Basket (Q1 / Q2 / Q3 / Q4)</summary>
+            <div class="details-content">
+                <p class="hint">Basket uniquement. Format : <b>Total=Ligne/Over/Under | ML=Dom/Ext</b></p>
+                <label>Q1 — 1er quart-temps</label>
+                <input type="text" name="q1" placeholder="Ex : Total=55.5/1.85/1.95 | ML=1.80/2.05">
+                <div class="example">Exemple : Total=55.5/1.85/1.95 | ML=1.80/2.05</div>
+                <label>Q2 — 2ème quart-temps</label>
+                <input type="text" name="q2" placeholder="Ex : Total=53.5/1.90/1.90 | ML=1.85/2.00">
+                <div class="example">Exemple : Total=53.5/1.90/1.90 | ML=1.85/2.00</div>
+                <label>Q3 — 3ème quart-temps</label>
+                <input type="text" name="q3" placeholder="Ex : Total=55.0/1.85/1.95 | ML=1.75/2.10">
+                <div class="example">Exemple : Total=55.0/1.85/1.95 | ML=1.75/2.10</div>
+                <label>Q4 — 4ème quart-temps</label>
+                <input type="text" name="q4" placeholder="Ex : Total=53.5/1.90/1.90 | ML=1.80/2.05">
+                <div class="example">Exemple : Total=53.5/1.90/1.90 | ML=1.80/2.05</div>
             </div>
         </details>
 
@@ -285,4 +304,4 @@
     </form>
 
 </body>
-</html> 
+    </html>
