@@ -146,10 +146,6 @@ def eval_candidat(label, p, cote, marche=None):
     }
 
 
-
-# =========================================================
-# CALCUL DES POINTS ATTENDUS
-# =========================================================
 def compute_lambdas_basket(
     home_ctx, home_glob, away_ctx, away_glob,
     h2h, bd, be, fd, fe, pd, pe, te,
@@ -197,8 +193,7 @@ def compute_lambdas_basket(
     mu_home *= facteur_blessures(bd)
     mu_away *= facteur_blessures(be)
     mu_home *= facteur_fatigue(fd)
-    mu_away *= facteur_fatigue(ft := fe)
-    mu_away *= 1.0
+    mu_away *= facteur_fatigue(fe)
 
     mu_home = max(mu_home, 60.0)
     mu_away = max(mu_away, 60.0)
@@ -219,7 +214,8 @@ def compute_lambdas_basket(
         "f_bless_ext": facteur_blessures(be),
         "f_fatigue_dom": facteur_fatigue(fd),
         "f_fatigue_ext": facteur_fatigue(fe),
-    }
+            }
+
 
 
 def proba_moneyline(mu_home, mu_away, sigma):
@@ -374,7 +370,6 @@ def analyser_match_basket(
         if c:
             total_2h_candidats.append(c)
 
-    # QUARTS-TEMPS
     quart_data = [
         ("Q1", q1, RATIO_Q1),
         ("Q2", q2, RATIO_Q2),
