@@ -128,6 +128,7 @@ async def accueil(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "titre": "QFTE V23.0"})
 
 
+
 @app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
     form = await request.form()
@@ -137,6 +138,7 @@ async def analyser(request: Request):
     eq_ext = form.get("equipe_exterieur", "")
     date_match = form.get("date_match", "")
     sport = form.get("sport", "football")
+    ligue = form.get("ligue", "nba")
 
     home_ctx = parse_matchs(form.get("home_contextuel", ""))
     home_glob = parse_matchs(form.get("home_global", ""))
@@ -172,9 +174,6 @@ async def analyser(request: Request):
     pe = fi(form, "pos_ext")
     te = fi(form, "total_equipes")
 
-    # =========================================================
-    # ROUTING : FOOTBALL ou BASKETBALL
-    # =========================================================
     if sport == "basketball":
         ml_ft = parse_ml(form.get("ml_ft", ""))
         ml_1h = parse_ml(form.get("ml_1h", ""))
@@ -186,7 +185,8 @@ async def analyser(request: Request):
             home_ctx, home_glob, away_ctx, away_glob,
             h2h, hcp_lignes, ou_lignes,
             bd, be, fd, fe, pd, pe, te,
-            ml_ft, ml_1h, ml_2h, total_1h, total_2h
+            ml_ft, ml_1h, ml_2h, total_1h, total_2h,
+            ligue
         )
     else:
         r = analyser_match_football(
@@ -208,7 +208,6 @@ async def analyser(request: Request):
     html += '<h1>QFTE V23.0 - Analyse</h1>'
     html += '<p style="text-align:center;color:#999;font-size:12px;">' + eq_dom + ' vs ' + eq_ext + ' - ' + competition + ' (' + sport + ')</p>'
 
-    # DECISION
     if r["pari_retenu"]:
         p = r["pari_retenu"]
         html += '<div class="box" style="border:2px solid #4ade80;">'
@@ -228,7 +227,6 @@ async def analyser(request: Request):
         html += '<p style="color:#ccc;font-size:13px;">Aucune selection ne respecte les filtres V23.0.</p>'
         html += '</div>'
 
-    # SECURITE O/U (foot uniquement)
     if sport != "basketball" and r.get("ou_securite"):
         s = r["ou_securite"]
         ec = "#4ade80" if s["ev"] >= 0 else "#ef4444"
@@ -243,21 +241,17 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
         html += '</div>'
 
-
-    # =========================================================
-    # AFFICHAGE BASKETBALL
-    # =========================================================
     if sport == "basketball":
-        # POINTS ATTENDUS
         html += '<div class="box"><h2>Points attendus (mu)</h2>'
         html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val">' + str(r["mu_home"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">' + eq_ext + '</span><span class="val">' + str(r["mu_away"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Total FT</span><span class="val">' + str(r["mu_total"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Total 1H</span><span class="val">' + str(r["mu_total_1h"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Total 2H</span><span class="val">' + str(r["mu_total_2h"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Sigma FT / MT</span><span class="val">' + str(r["sigma_ft"]) + ' / ' + str(r["sigma_mt"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Ligue</span><span class="val">' + ligue.upper() + '</span></div>'
         html += '</div>'
 
-        # PROBAS ML
         html += '<div class="box"><h2>Probabilites Moneyline</h2>'
         html += '<div class="ligne"><span class="label">FT Domicile</span><span class="val">' + str(round(r["p_ml_home"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">FT Exterieur</span><span class="val">' + str(round(r["p_ml_away"] * 100, 2)) + '%</span></div>'
@@ -267,7 +261,6 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">2H Exterieur</span><span class="val">' + str(round(r["p_2h_away"] * 100, 2)) + '%</span></div>'
         html += '</div>'
 
-        # ML
         html += '<h2 style="text-align:left;">Detail - Moneyline</h2>'
         if r["ml_candidats"]:
             for c in r["ml_candidats"]:
@@ -275,7 +268,6 @@ async def analyser(request: Request):
         else:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote ML saisie.</p></div>'
 
-        # SPREAD
         html += '<h2 style="text-align:left;">Detail - Spread</h2>'
         if r["spread_candidats"]:
             for c in r["spread_candidats"]:
@@ -283,7 +275,6 @@ async def analyser(request: Request):
         else:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun spread saisi.</p></div>'
 
-        # TOTAL FT
         html += '<h2 style="text-align:left;">Detail - Total Points FT</h2>'
         if r["total_ft_candidats"]:
             for c in r["total_ft_candidats"]:
@@ -291,7 +282,6 @@ async def analyser(request: Request):
         else:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun total FT saisi.</p></div>'
 
-        # MI-TEMPS 1H
         html += '<h2 style="text-align:left;">Detail - 1ere Mi-temps (1H)</h2>'
         if r["ml_1h_candidats"]:
             for c in r["ml_1h_candidats"]:
@@ -302,7 +292,6 @@ async def analyser(request: Request):
         if not r["ml_1h_candidats"] and not r["total_1h_candidats"]:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 1H saisie.</p></div>'
 
-        # MI-TEMPS 2H
         html += '<h2 style="text-align:left;">Detail - 2eme Mi-temps (2H)</h2>'
         if r["ml_2h_candidats"]:
             for c in r["ml_2h_candidats"]:
@@ -313,7 +302,6 @@ async def analyser(request: Request):
         if not r["ml_2h_candidats"] and not r["total_2h_candidats"]:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 2H saisie.</p></div>'
 
-        # AJUSTEMENTS BASKET
         d = r["details"]
         html += '<div class="box"><h2>Ajustements appliques</h2>'
         html += '<div class="ligne"><span class="label">BP dom (ctx/glob)</span><span class="val">' + str(d["home_bp_ctx"]) + ' / ' + str(d["home_bp_glob"]) + '</span></div>'
@@ -324,11 +312,8 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Fatigue</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
         html += '</div>'
 
-    # =========================================================
-    # AFFICHAGE FOOTBALL
-    # =========================================================
+
     else:
-        # LAMBDA
         html += '<div class="box"><h2>Buts attendus (lambda)</h2>'
         html += '<div class="ligne"><span class="label">' + eq_dom + ' (total)</span><span class="val">' + str(r["lambda_home"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">' + eq_ext + ' (total)</span><span class="val">' + str(r["lambda_away"]) + '</span></div>'
@@ -338,20 +323,17 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">' + eq_ext + ' (2H)</span><span class="val">' + str(r["lambda_2h_away"]) + '</span></div>'
         html += '</div>'
 
-        # PROBAS 1X2
         html += '<div class="box"><h2>Probabilites 1X2 (temps plein)</h2>'
         html += '<div class="ligne"><span class="label">1</span><span class="val">' + str(round(r["p1"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">X</span><span class="val">' + str(round(r["px"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">2</span><span class="val">' + str(round(r["p2"] * 100, 2)) + '%</span></div>'
         html += '</div>'
 
-        # TOP 3
         html += '<div class="box"><h2>Top 3 scores probables</h2>'
         for s in r["top_3_scores"]:
             html += '<div class="ligne"><span class="label">#' + str(s["rank"]) + '</span><span class="val">' + s["score"] + ' - ' + str(round(s["probability"] * 100, 2)) + '%</span></div>'
         html += '</div>'
 
-        # DIVERGENCES
         html += '<h2 style="text-align:left;">Divergences detectees</h2>'
         if r.get("divergences"):
             for d in r["divergences"]:
@@ -366,12 +348,10 @@ async def analyser(request: Request):
         else:
             html += '<div class="box"><p style="color:#4ade80;font-size:13px;">Aucune divergence majeure.</p></div>'
 
-        # 1X2
         html += '<h2 style="text-align:left;">Detail - 1X2</h2>'
         for c in r["candidats"]:
             html += bloc_candidat(c)
 
-        # HANDICAP
         html += '<h2 style="text-align:left;">Detail - Handicap</h2>'
         if r["handicap_resultats"]:
             for h in r["handicap_resultats"]:
@@ -391,7 +371,6 @@ async def analyser(request: Request):
         else:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun handicap saisi.</p></div>'
 
-        # OU
         html += '<h2 style="text-align:left;">Detail - Over / Under</h2>'
         if r["ou_resultats"]:
             for o in r["ou_resultats"]:
@@ -411,7 +390,6 @@ async def analyser(request: Request):
         else:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun O/U saisi.</p></div>'
 
-        # 2 MI-TEMPS
         m2 = r["marches_2mt"]
         html += '<h2 style="text-align:left;">Detail - 2 Mi-temps</h2>'
         if m2.get("ht"):
@@ -425,7 +403,6 @@ async def analyser(request: Request):
         if not m2.get("ht") and not m2.get("2h"):
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 2 mi-temps saisie.</p></div>'
 
-        # AJUSTEMENTS FOOT
         d = r["details"]
         html += '<div class="box"><h2>Ajustements appliques</h2>'
         html += '<div class="ligne"><span class="label">BP dom (ctx/glob)</span><span class="val">' + str(d["home_bp_ctx"]) + ' / ' + str(d["home_bp_glob"]) + '</span></div>'
@@ -440,13 +417,11 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Fatigue</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
         html += '</div>'
 
-    # BOUTONS
     html += '<div style="text-align:center;margin:24px 0;">'
     html += '<button class="btn" onclick="sauvegarder()">Sauvegarder</button> '
     html += '<a href="/" class="btn btn-secondary">Nouvelle analyse</a>'
     html += '</div>'
 
-    # SCRIPT
     html += '<script>const ANALYSE = ' + analyse_json + ';'
     html += 'function sauvegarder(){try{let hist=JSON.parse(localStorage.getItem("qfte_analyses")||"[]");'
     html += 'hist=hist.filter(a=>!(a.equipe_domicile===ANALYSE.equipe_domicile&&a.equipe_exterieur===ANALYSE.equipe_exterieur&&a.date_match===ANALYSE.date_match));'
