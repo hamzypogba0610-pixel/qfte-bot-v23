@@ -81,6 +81,35 @@ def parse_total_mt(t):
         return None
 
 
+def parse_quart(t):
+    """
+    Parse : "Total=55.5/1.85/1.95 | ML=1.80/2.05"
+    Retourne {"total": [ligne, co, cu], "ml": [dom, ext]} ou None.
+    """
+    if not t:
+        return None
+    resultat = {}
+    for bloc in t.split("|"):
+        bloc = bloc.strip()
+        if bloc.upper().startswith("TOTAL="):
+            val = bloc.split("=", 1)[1].strip()
+            p = [x.strip() for x in val.split("/") if x.strip()]
+            if len(p) == 3:
+                try:
+                    resultat["total"] = [float(p[0]), float(p[1]), float(p[2])]
+                except:
+                    pass
+        elif bloc.upper().startswith("ML="):
+            val = bloc.split("=", 1)[1].strip()
+            p = [x.strip() for x in val.split("/") if x.strip()]
+            if len(p) == 2:
+                try:
+                    resultat["ml"] = [float(p[0]), float(p[1])]
+                except:
+                    pass
+    return resultat if resultat else None
+
+
 def ff(form, k, d=0.0):
     v = form.get(k, "")
     if v is None or v == "":
@@ -184,7 +213,6 @@ async def analyser(request: Request):
     pe = fi(form, "pos_ext")
     te = fi(form, "total_equipes")
 
-    # Stats avancees (basket)
     pace_dom = fopt(form, "pace_dom")
     offrtg_dom = fopt(form, "offrtg_dom")
     defrtg_dom = fopt(form, "defrtg_dom")
@@ -198,6 +226,10 @@ async def analyser(request: Request):
         ml_2h = parse_ml(form.get("ml_2h", ""))
         total_1h = parse_total_mt(form.get("total_1h", ""))
         total_2h = parse_total_mt(form.get("total_2h", ""))
+        q1 = parse_quart(form.get("q1", ""))
+        q2 = parse_quart(form.get("q2", ""))
+        q3 = parse_quart(form.get("q3", ""))
+        q4 = parse_quart(form.get("q4", ""))
 
         r = analyser_match_basket(
             home_ctx, home_glob, away_ctx, away_glob,
@@ -206,7 +238,8 @@ async def analyser(request: Request):
             ml_ft, ml_1h, ml_2h, total_1h, total_2h,
             ligue,
             pace_dom, offrtg_dom, defrtg_dom,
-            pace_ext, offrtg_ext, defrtg_ext
+            pace_ext, offrtg_ext, defrtg_ext,
+            q1, q2, q3, q4
         )
     else:
         r = analyser_match_football(
@@ -321,6 +354,21 @@ async def analyser(request: Request):
                 html += bloc_candidat(c)
         if not r["ml_2h_candidats"] and not r["total_2h_candidats"]:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 2H saisie.</p></div>'
+
+        # QUARTS-TEMPS
+        for nom_q in ["Q1", "Q2", "Q3", "Q4"]:
+            qd = r["quarts"][nom_q]
+            html += '<h2 style="text-align:left;">Detail - ' + nom_q + '</h2>'
+            if qd.get("mu"):
+                html += '<div class="box"><div class="ligne"><span class="label">Mu total ' + nom_q + '</span><span class="val">' + str(qd["mu"]) + '</span></div></div>'
+            if qd["total"]:
+                for c in qd["total"]:
+                    html += bloc_candidat(c)
+            if qd["ml"]:
+                for c in qd["ml"]:
+                    html += bloc_candidat(c)
+            if not qd["total"] and not qd["ml"]:
+                html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote ' + nom_q + ' saisie.</p></div>'
 
         d = r["details"]
         html += '<div class="box"><h2>Ajustements appliques</h2>'
