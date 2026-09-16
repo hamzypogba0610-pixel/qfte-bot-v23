@@ -2,7 +2,7 @@
 qfte_engine/mvp.py
 ------------------
 Moteur QFTE V23.0 - Complet :
-1X2 + Handicap + Over/Under + SÉCURITÉ O/U + DÉTECTION DIVERGENCES.
+1X2 + Handicap + Over/Under + Sécurité O/U + Divergences + Mode 2 mi-temps.
 """
 
 import math
@@ -41,10 +41,24 @@ def compute_1x2(matrix):
 
 
 # =========================================================
-# 2. DÉ-MARGEAGE
+# 2. RATIO HT (part des buts en 1ère MT)
+# =========================================================
+def compute_ratio_ht(matchs):
+    m_ht = [m for m in matchs if m.get("ht_bp") is not None]
+    if not m_ht:
+        return 0.45
+    total_bp = sum(m["bp"] for m in m_ht)
+    total_ht_bp = sum(m["ht_bp"] for m in m_ht)
+    if total_bp <= 0:
+        return 0.45
+    r = total_ht_bp / total_bp
+    return max(min(r, 0.70), 0.25)
+
+
+# =========================================================
+# 3. DÉ-MARGEAGE
 # =========================================================
 def demargeage_proportionnel(cotes):
-    """Retourne les probas implicites normalisées d'une liste de cotes."""
     if not cotes or any(c is None or c <= 0 for c in cotes):
         return None
     inv = [1/c for c in cotes]
@@ -55,7 +69,7 @@ def demargeage_proportionnel(cotes):
 
 
 # =========================================================
-# 3. HANDICAP ASIATIQUE
+# 4. HANDICAP ASIATIQUE
 # =========================================================
 def proba_handicap_dom(matrix, hcp):
     p_gain = 0.0; p_remb = 0.0
@@ -116,7 +130,7 @@ def calcul_handicap_complet(matrix, handicap_lignes):
 
 
 # =========================================================
-# 4. OVER / UNDER
+# 5. OVER / UNDER
 # =========================================================
 def proba_over_under(matrix, ligne):
     p_over = 0.0; p_under = 0.0; p_remb = 0.0
@@ -172,18 +186,65 @@ def calcul_ou_complet(matrix, ou_lignes):
             })
     return resultats
 
+# =========================================================
+# 6. MARCHÉS 2 MI-TEMPS (HT + 2H)
+# =========================================================
+def eval_candidat_simple(label, p, cote):
+    if not cote or cote <= 0:
+        return None
+    ev = compute_ev(p, cote)
+    fiab = compute_reliability(p, cote, ev)
+    passe, raisons = appliquer_filtres_discipline(p, cote, ev, fiab)
+    dec, niv = classify_decision(fiab, ev)
+    stake = compute_stake(p, cote, fiab, ev) if passe else 0.0
+    return {
+        "selection": label, "p": round(p, 4), "cote": cote,
+        "ev": round(ev, 4), "fiabilite": fiab,
+        "passe_filtres": passe, "raisons_rejet": raisons,
+        "decision": dec, "niveau": niv, "stake": stake,
+    }
+
+
+def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h_away, cotes_ht, cotes_2h):
+    resultats = {"ht": [], "2h": []}
+    matrix_ht = compute_score_matrix(lambda_ht_home, lambda_ht_away)
+    matrix_2h = compute_score_matrix(lambda_2h_home, lambda_2h_away)
+    p1_ht, px_ht, p2_ht = compute_1x2(matrix_ht)
+    p1_2h, px_2h, p2_2h = compute_1x2(matrix_2h)
+
+    if cotes_ht:
+        for label, p, cote in [
+            ("HT — 1 (Domicile)", p1_ht, cotes_ht[0]),
+            ("HT — X (Nul)", px_ht, cotes_ht[1]),
+            ("HT — 2 (Extérieur)", p2_ht, cotes_ht[2]),
+        ]:
+            c = eval_candidat_simple(label, p, cote)
+            if c: resultats["ht"].append(c)
+
+    if cotes_2h:
+        for label, p, cote in [
+            ("2H — 1 (Domicile)", p1_2h, cotes_2h[0]),
+            ("2H — X (Nul)", px_2h, cotes_2h[1]),
+            ("2H — 2 (Extérieur)", p2_2h, cotes_2h[2]),
+        ]:
+            c = eval_candidat_simple(label, p, cote)
+            if c: resultats["2h"].append(c)
+
+    resultats["p1_ht"] = round(p1_ht, 4)
+    resultats["px_ht"] = round(px_ht, 4)
+    resultats["p2_ht"] = round(p2_ht, 4)
+    resultats["p1_2h"] = round(p1_2h, 4)
+    resultats["px_2h"] = round(px_2h, 4)
+    resultats["p2_2h"] = round(p2_2h, 4)
+    return resultats
+
 
 # =========================================================
-# 5. DÉTECTION DE DIVERGENCES
+# 7. DÉTECTION DE DIVERGENCES
 # =========================================================
 def detecter_divergences(r, cotes_dict):
-    """
-    Détecte les divergences Modèle vs Marché sur 1X2, Handicap et O/U.
-    Retourne une liste de dicts.
-    """
     divergences = []
 
-    # --- A. 1X2 ---
     p_marche_1x2 = demargeage_proportionnel([
         cotes_dict.get("curr_1"), cotes_dict.get("curr_x"), cotes_dict.get("curr_2")
     ])
@@ -199,35 +260,24 @@ def detecter_divergences(r, cotes_dict):
                 niveau = "MAJEUR" if abs(ecart) > 0.25 else "MODÉRÉ"
                 interp = "🟢 Modèle > Marché — value détectée" if ecart > 0 else "⚠️ Modèle < Marché — piège potentiel"
                 divergences.append({
-                    "type": "Modèle vs Marché",
-                    "marche": f"1X2 — {label}",
-                    "p_modele": round(p_mod, 4),
-                    "p_marche": round(p_mar, 4),
-                    "ecart": round(ecart, 4),
-                    "niveau": niveau,
-                    "interpretation": interp,
+                    "type": "Modèle vs Marché", "marche": f"1X2 — {label}",
+                    "p_modele": round(p_mod, 4), "p_marche": round(p_mar, 4),
+                    "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
                 })
 
-    # --- B. Handicap (par ligne) ---
     for h in r.get("handicap_resultats", []):
         if h["cote"] and h["cote"] > 0:
-            # Proba implicite simple du marché (sans démargeage, car côté unique)
             p_marche_hcp = 1.0 / h["cote"]
             ecart = h["p"] - p_marche_hcp
             if abs(ecart) > 0.15:
                 niveau = "MAJEUR" if abs(ecart) > 0.25 else "MODÉRÉ"
                 interp = "🟢 Modèle > Marché — value" if ecart > 0 else "⚠️ Modèle < Marché — piège"
                 divergences.append({
-                    "type": "Modèle vs Marché",
-                    "marche": f"Hcp {h['hcp']:+g} ({h['cible']})",
-                    "p_modele": round(h["p"], 4),
-                    "p_marche": round(p_marche_hcp, 4),
-                    "ecart": round(ecart, 4),
-                    "niveau": niveau,
-                    "interpretation": interp,
+                    "type": "Modèle vs Marché", "marche": f"Hcp {h['hcp']:+g} ({h['cible']})",
+                    "p_modele": round(h["p"], 4), "p_marche": round(p_marche_hcp, 4),
+                    "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
                 })
 
-    # --- C. Over / Under ---
     for o in r.get("ou_resultats", []):
         if o["cote"] and o["cote"] > 0:
             p_marche_ou = 1.0 / o["cote"]
@@ -236,22 +286,17 @@ def detecter_divergences(r, cotes_dict):
                 niveau = "MAJEUR" if abs(ecart) > 0.25 else "MODÉRÉ"
                 interp = "🟢 Modèle > Marché — value" if ecart > 0 else "⚠️ Modèle < Marché — piège"
                 divergences.append({
-                    "type": "Modèle vs Marché",
-                    "marche": f"{o['type']} {o['ligne']} buts",
-                    "p_modele": round(o["p"], 4),
-                    "p_marche": round(p_marche_ou, 4),
-                    "ecart": round(ecart, 4),
-                    "niveau": niveau,
-                    "interpretation": interp,
+                    "type": "Modèle vs Marché", "marche": f"{o['type']} {o['ligne']} buts",
+                    "p_modele": round(o["p"], 4), "p_marche": round(p_marche_ou, 4),
+                    "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
                 })
 
-    # Tri : les divergences MAJEURES en premier, puis par écart absolu décroissant
     divergences.sort(key=lambda d: (0 if d["niveau"] == "MAJEUR" else 1, -abs(d["ecart"])))
     return divergences
 
 
 # =========================================================
-# 6. MOYENNES
+# 8. MOYENNES
 # =========================================================
 def moy(valeurs):
     v = [x for x in valeurs if x is not None]
@@ -260,7 +305,7 @@ def moy(valeurs):
 
 
 # =========================================================
-# 7. AJUSTEMENTS CONTEXTUELS
+# 9. AJUSTEMENTS CONTEXTUELS
 # =========================================================
 def facteur_meteo(m):
     return {"normale": 1.00, "pluie": 0.90, "neige": 0.85, "chaleur_extreme": 0.90, "vent_fort": 0.92}.get(m, 1.00)
@@ -303,7 +348,7 @@ def facteur_h2h(h2h):
 
 
 # =========================================================
-# 8. LAMBDAS
+# 10. LAMBDAS
 # =========================================================
 def compute_lambdas(home_ctx, home_glob, away_ctx, away_glob, h2h_matchs,
                     meteo, enjeu, bd, be, fd, fe, pd=None, pe=None, te=None):
@@ -330,6 +375,10 @@ def compute_lambdas(home_ctx, home_glob, away_ctx, away_glob, h2h_matchs,
     lh *= facteur_blessures(bd); la *= facteur_blessures(be)
     lh *= facteur_fatigue(fd); la *= facteur_fatigue(fe)
     lh = max(lh, 0.1); la = max(la, 0.1)
+
+    r_ht_h = compute_ratio_ht(home_ctx)
+    r_ht_a = compute_ratio_ht(away_ctx)
+
     return lh, la, {
         "home_bp_ctx": round(hbp_ctx, 2), "home_bp_glob": round(hbp_g, 2),
         "away_bp_ctx": round(abp_ctx, 2), "away_bp_glob": round(abp_g, 2),
@@ -341,16 +390,17 @@ def compute_lambdas(home_ctx, home_glob, away_ctx, away_glob, h2h_matchs,
         "f_bless_dom": facteur_blessures(bd), "f_bless_ext": facteur_blessures(be),
         "f_fatigue_dom": facteur_fatigue(fd), "f_fatigue_ext": facteur_fatigue(fe),
         "f_commun": round(fcomm, 3),
+        "ratio_ht_home": round(r_ht_h, 3),
+        "ratio_ht_away": round(r_ht_a, 3),
     }
 
 
 # =========================================================
-# 9. EV + FIABILITÉ + STAKE
+# 11. EV + FIABILITÉ + STAKE
 # =========================================================
 def compute_ev(p, cote):
     if cote <= 0: return 0.0
     return p * cote - 1.0
-
 
 def compute_reliability(p, cote, ev):
     f_p = p
@@ -358,7 +408,6 @@ def compute_reliability(p, cote, ev):
     f_c = 0.7 if cote < 1.3 else (0.5 if cote > 8.0 else 1.0)
     fiab = 0.50 * f_p + 0.30 * f_v + 0.20 * f_c
     return round(min(max(fiab, 0.0), 1.0), 3)
-
 
 def compute_stake(p, cote, fiab, ev):
     if ev <= 0 or cote <= 1: return 0.0
@@ -371,12 +420,11 @@ def compute_stake(p, cote, fiab, ev):
 
 
 # =========================================================
-# 10. FILTRES
+# 12. FILTRES
 # =========================================================
 SEUIL_FIABILITE = 0.75
 SEUIL_VALUE_1X2 = 0.05
 SEUIL_CONFIANCE = 0.70
-
 
 def appliquer_filtres_discipline(p, cote, ev, fiab):
     r = []
@@ -384,7 +432,6 @@ def appliquer_filtres_discipline(p, cote, ev, fiab):
     if ev < SEUIL_VALUE_1X2: r.append(f"Value {ev*100:.2f}% < {SEUIL_VALUE_1X2*100:.0f}%")
     if p < SEUIL_CONFIANCE: r.append(f"Confiance {p*100:.2f}% < {SEUIL_CONFIANCE*100:.0f}%")
     return (len(r) == 0, r)
-
 
 def classify_decision(fiab, ev):
     if fiab >= 0.85 and ev >= SEUIL_VALUE_1X2: return "🔥 ATTAQUE FORTE", "ELITE"
@@ -395,7 +442,7 @@ def classify_decision(fiab, ev):
 
 
 # =========================================================
-# 11. ANALYSE COMPLÈTE
+# 13. ANALYSE COMPLÈTE
 # =========================================================
 def analyser_match_football(
     home_ctx, home_glob, away_ctx, away_glob,
@@ -404,7 +451,8 @@ def analyser_match_football(
     blessures_dom=False, blessures_ext=False,
     fatigue_dom=False, fatigue_ext=False,
     h2h_matchs=None, handicap_lignes=None, ou_lignes=None,
-    pos_dom=None, pos_ext=None, total_equipes=None
+    pos_dom=None, pos_ext=None, total_equipes=None,
+    cotes_ht=None, cotes_2h=None
 ):
     if h2h_matchs is None: h2h_matchs = []
     if handicap_lignes is None: handicap_lignes = []
@@ -440,6 +488,12 @@ def analyser_match_football(
     handicap_resultats = calcul_handicap_complet(matrix, handicap_lignes)
     ou_resultats = calcul_ou_complet(matrix, ou_lignes)
 
+    lambda_ht_h = lh * details["ratio_ht_home"]
+    lambda_ht_a = la * details["ratio_ht_away"]
+    lambda_2h_h = lh * (1 - details["ratio_ht_home"])
+    lambda_2h_a = la * (1 - details["ratio_ht_away"])
+    marches_2mt = calcul_marches_2mt(lambda_ht_h, lambda_ht_a, lambda_2h_h, lambda_2h_a, cotes_ht, cotes_2h)
+
     tous = list(candidats)
     for h in handicap_resultats:
         h["selection"] = f"Hcp {h['hcp']:+g} ({h['cible']})"; h["type"] = "Handicap"
@@ -447,6 +501,11 @@ def analyser_match_football(
     for o in ou_resultats:
         o["selection"] = f"{o['type']} {o['ligne']}"; o["type"] = "O/U Buts"
         tous.append(o)
+    for c in marches_2mt.get("ht", []):
+        c["type"] = "1X2 HT"; tous.append(c)
+    for c in marches_2mt.get("2h", []):
+        c["type"] = "1X2 2H"; tous.append(c)
+
     tous.sort(key=lambda x: x["fiabilite"], reverse=True)
 
     pari_retenu = None
@@ -470,7 +529,6 @@ def analyser_match_football(
     top_scores = sorted(matrix.items(), key=lambda x: x[1], reverse=True)[:3]
     top_3 = [{"rank": i+1, "score": f"{s[0]}-{s[1]}", "probability": round(p, 4)} for i, (s, p) in enumerate(top_scores)]
 
-    # Divergences
     cotes_dict = {"curr_1": curr_1, "curr_x": curr_x, "curr_2": curr_2}
     r_temp = {
         "p1": p1, "px": px, "p2": p2,
@@ -481,15 +539,18 @@ def analyser_match_football(
 
     return {
         "lambda_home": round(lh, 2), "lambda_away": round(la, 2),
+        "lambda_ht_home": round(lambda_ht_h, 2), "lambda_ht_away": round(lambda_ht_a, 2),
+        "lambda_2h_home": round(lambda_2h_h, 2), "lambda_2h_away": round(lambda_2h_a, 2),
         "details": details,
         "p1": round(p1, 4), "px": round(px, 4), "p2": round(p2, 4),
         "ev1": round(ev1, 4), "evx": round(evx, 4), "ev2": round(ev2, 4),
-            "f1": f1, "fx": fx, "f2": f2,
-    "candidats": candidats,
-    "handicap_resultats": handicap_resultats,
-    "ou_resultats": ou_resultats,
-    "ou_securite": ou_securite,
-    "pari_retenu": pari_retenu,
-    "top_3_scores": top_3,
-    "divergences": divergences,
-    }
+        "f1": f1, "fx": fx, "f2": f2,
+        "candidats": candidats,
+        "handicap_resultats": handicap_resultats,
+        "ou_resultats": ou_resultats,
+        "marches_2mt": marches_2mt,
+        "ou_securite": ou_securite,
+        "pari_retenu": pari_retenu,
+        "top_3_scores": top_3,
+        "divergences": divergences,
+}
