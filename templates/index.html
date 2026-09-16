@@ -67,13 +67,16 @@
             <p style="font-size:12px;color:#aac;margin:8px 0 0 0;">
             Scores : <b>BP-BC (HT_BP-HT_BC)</b><br>
             Handicap : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b><br>
-            O/U buts : <b>Ligne/Cote_Over/Cote_Under</b>
+            O/U : <b>Ligne/Cote_Over/Cote_Under</b><br>
+            ML Basket : <b>Cote_dom/Cote_ext</b>
             </p>
         </div>
+
         <details open>
             <summary>🏠 Domicile — 5 derniers à domicile</summary>
             <div class="details-content">
                 <input type="text" name="home_contextuel" placeholder="Ex : 3-1 (1-0), 2-2, 4-0 (2-0), 1-1, 2-0">
+                <div class="hint">Foot : buts. Basket : points (ex: 105-98).</div>
             </div>
         </details>
 
@@ -123,28 +126,33 @@
             </div>
         </details>
 
+        
         <details>
-            <summary>📈 Cotes 1X2 (temps plein)</summary>
+            <summary>📈 Cotes 1X2 (Foot) / Moneyline FT (Basket)</summary>
             <div class="details-content">
-                <label>Ouverture — 1 / X / 2</label>
+                <p class="hint">Foot : 1 / X / 2. Basket : Moneyline Domicile/Extérieur (pas de X).</p>
+                <label>Ouverture — Domicile / Nul / Extérieur</label>
                 <div class="row">
-                    <div><input type="number" step="0.01" name="open_1" placeholder="1" required></div>
+                    <div><input type="number" step="0.01" name="open_1" placeholder="1"></div>
                     <div><input type="number" step="0.01" name="open_x" placeholder="X"></div>
-                    <div><input type="number" step="0.01" name="open_2" placeholder="2" required></div>
+                    <div><input type="number" step="0.01" name="open_2" placeholder="2"></div>
                 </div>
-                <label>Actuelles — 1 / X / 2</label>
+                <label>Actuelles — Domicile / Nul / Extérieur</label>
                 <div class="row">
-                    <div><input type="number" step="0.01" name="curr_1" placeholder="1" required></div>
+                    <div><input type="number" step="0.01" name="curr_1" placeholder="1"></div>
                     <div><input type="number" step="0.01" name="curr_x" placeholder="X"></div>
-                    <div><input type="number" step="0.01" name="curr_2" placeholder="2" required></div>
+                    <div><input type="number" step="0.01" name="curr_2" placeholder="2"></div>
                 </div>
+                <label>🏀 Moneyline FT (Basket uniquement)</label>
+                <input type="text" name="ml_ft" placeholder="Ex : 1.55/2.30">
+                <div class="example">Format : Cote_domicile/Cote_extérieur</div>
             </div>
         </details>
 
         <details>
-            <summary>🕐 Mode 2 mi-temps (HT + 2H)</summary>
+            <summary>🕐 Mode 2 mi-temps (Foot)</summary>
             <div class="details-content">
-                <p class="hint">Cotes 1X2 à la mi-temps (HT) et en 2ème mi-temps (2H). Optionnel.</p>
+                <p class="hint">Cotes 1X2 à la mi-temps (HT) et en 2ème mi-temps (2H).</p>
                 <label>1X2 à la mi-temps (HT)</label>
                 <div class="row">
                     <div><input type="number" step="0.01" name="ht_1" placeholder="HT 1"></div>
@@ -161,20 +169,39 @@
         </details>
 
         <details>
-            <summary>🎯 Handicap asiatique</summary>
+            <summary>🕐 Mi-temps Basket (1H / 2H)</summary>
             <div class="details-content">
-                <p class="hint">Format : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b>, sépare par des virgules.</p>
-                <input type="text" name="handicap" placeholder="Ex : -0.5/1.90/+0.5/1.95, -1.5/2.10/+1.5/1.75">
-                <div class="example">Exemple : -0.5/1.90/+0.5/1.95, -1.5/2.10/+1.5/1.75, -2.5/3.20/+2.5/1.35</div>
+                <p class="hint">Basket uniquement.</p>
+                <label>Moneyline 1ère mi-temps (1H)</label>
+                <input type="text" name="ml_1h" placeholder="Ex : 1.75/2.00">
+                <div class="example">Format : Cote_dom/Cote_ext</div>
+                <label>Total Points 1ère mi-temps (1H)</label>
+                <input type="text" name="total_1h" placeholder="Ex : 110.5/1.90/1.90">
+                <div class="example">Format : Ligne/Cote_Over/Cote_Under</div>
+                <label>Moneyline 2ème mi-temps (2H)</label>
+                <input type="text" name="ml_2h" placeholder="Ex : 1.80/1.95">
+                <div class="example">Format : Cote_dom/Cote_ext</div>
+                <label>Total Points 2ème mi-temps (2H)</label>
+                <input type="text" name="total_2h" placeholder="Ex : 105.5/1.85/1.95">
+                <div class="example">Format : Ligne/Cote_Over/Cote_Under</div>
             </div>
         </details>
 
         <details>
-            <summary>⚽ Over / Under Buts</summary>
+            <summary>🎯 Handicap (Foot) / Spread (Basket)</summary>
             <div class="details-content">
-                <p class="hint">Format : <b>Ligne/Cote_Over/Cote_Under</b>, sépare par des virgules.</p>
-                <input type="text" name="ou_buts" placeholder="Ex : 2.5/1.85/1.95, 3.5/2.40/1.55">
-                <div class="example">Exemple : 1.5/3.20/1.35, 2.5/1.85/1.95, 3.5/2.40/1.55, 4.5/3.50/1.30</div>
+                <p class="hint">Format : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b></p>
+                <input type="text" name="handicap" placeholder="Ex : -0.5/1.90/+0.5/1.95, -1.5/2.10/+1.5/1.75">
+                <div class="example">Foot : -0.5/1.90/+0.5/1.95 | Basket : -5.5/1.90/+5.5/1.95</div>
+            </div>
+        </details>
+
+        <details>
+            <summary>⚽ Over / Under (Foot) / Total Points FT (Basket)</summary>
+            <div class="details-content">
+                <p class="hint">Format : <b>Ligne/Cote_Over/Cote_Under</b></p>
+                <input type="text" name="ou_buts" placeholder="Foot : 2.5/1.85/1.95 | Basket : 220.5/1.90/1.90">
+                <div class="example">Foot : 1.5/3.20/1.35, 2.5/1.85/1.95 | Basket : 210.5/1.85/1.95, 220.5/1.90/1.90</div>
             </div>
         </details>
 
@@ -223,4 +250,4 @@
     </form>
 
 </body>
-                    </html>
+</html>
