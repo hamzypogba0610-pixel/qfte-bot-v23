@@ -142,7 +142,26 @@
             </div>
         </details>
 
-     
+        <details>
+            <summary>📊 Stats Avancées Basket (optionnel)</summary>
+            <div class="details-content">
+                <p class="hint">Si tu connais ces stats, elles améliorent la précision du modèle. Sinon, laisse vide.</p>
+                <label>Pace — Domicile (possessions / 48 min)</label>
+                <input type="number" step="0.1" name="pace_dom" placeholder="NBA: ~100 | Euroleague: ~78">
+                <label>OffRtg — Domicile (points / 100 possessions)</label>
+                <input type="number" step="0.1" name="offrtg_dom" placeholder="Ex : 118.5">
+                <label>DefRtg — Domicile (points concédés / 100 possessions)</label>
+                <input type="number" step="0.1" name="defrtg_dom" placeholder="Ex : 110.2">
+                <label>Pace — Extérieur</label>
+                <input type="number" step="0.1" name="pace_ext" placeholder="Ex : 99.5">
+                <label>OffRtg — Extérieur</label>
+                <input type="number" step="0.1" name="offrtg_ext" placeholder="Ex : 115.0">
+                <label>DefRtg — Extérieur</label>
+                <input type="number" step="0.1" name="defrtg_ext" placeholder="Ex : 112.0">
+            </div>
+    </details>
+
+       
         <details>
             <summary>📈 Cotes 1X2 (Foot) / Moneyline FT (Basket)</summary>
             <div class="details-content">
@@ -250,11 +269,11 @@
                 </div>
                 <div class="checkbox-line">
                     <input type="checkbox" name="fatigue_domicile" id="fat_dom">
-                    <label for="fat_dom" style="margin:0;">😴 Fatigue — domicile</label>
+                    <label for="fat_dom" style="margin:0;">😴 Back-to-back — domicile</label>
                 </div>
                 <div class="checkbox-line">
                     <input type="checkbox" name="fatigue_exterieur" id="fat_ext">
-                    <label for="fat_ext" style="margin:0;">😴 Fatigue — extérieur</label>
+                    <label for="fat_ext" style="margin:0;">😴 Back-to-back — extérieur</label>
                 </div>
                 <label>Notes libres</label>
                 <textarea name="notes" rows="2"></textarea>
@@ -266,4 +285,4 @@
     </form>
 
 </body>
-</html>   
+</html> 
