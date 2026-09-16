@@ -2,7 +2,7 @@
 qfte_engine/basket.py
 ---------------------
 Moteur QFTE V23.0 - Basketball multi-ligues.
-Sigma dynamique + Pace/OffRtg/DefRtg + Back-to-back.
+Sigma dynamique + Pace/OffRtg/DefRtg + Back-to-back + Q1-Q4.
 """
 
 import math
@@ -148,7 +148,7 @@ def eval_candidat(label, p, cote, marche=None):
 
 
 # =========================================================
-# CALCUL DES POINTS ATTENDUS (AVEC PACE/OFFRTG/DEFRTG)
+# CALCUL DES POINTS ATTENDUS
 # =========================================================
 def compute_lambdas_basket(
     home_ctx, home_glob, away_ctx, away_glob,
@@ -171,22 +171,14 @@ def compute_lambdas_basket(
     abp = 0.7 * abp_ctx + 0.3 * abp_g
     abc = 0.7 * abc_ctx + 0.3 * abc_g
 
-    # MU de base (basé sur les scores passés)
     mu_home_base = (hbp + abc) / 2.0
     mu_away_base = (abp + hbc) / 2.0
 
-    # === AJUSTEMENT PACE / OFFRTG / DEFRTG (si fournis) ===
     pace_applique = False
     if all(v is not None and v > 0 for v in [pace_dom, offrtg_dom, defrtg_dom, pace_ext, offrtg_ext, defrtg_ext]):
-        # Pace moyen du match
         pace_moy = (pace_dom + pace_ext) / 2.0
-
-        # Points attendus selon formule NBA : (OffRtg × DefRtg adversaire) / 100 × (Pace / 100)
-        # Version simplifiée : mu = OffRtg_équipe × (DefRtg_adversaire / 100) × (Pace_moy / 100)
         mu_home_avance = (offrtg_dom * defrtg_ext / 100.0) * (pace_moy / 100.0)
         mu_away_avance = (offrtg_ext * defrtg_dom / 100.0) * (pace_moy / 100.0)
-
-        # Fusion 60% avancé / 40% base (on garde une part des scores récents)
         mu_home = 0.6 * mu_home_avance + 0.4 * mu_home_base
         mu_away = 0.6 * mu_away_avance + 0.4 * mu_away_base
         pace_applique = True
@@ -194,7 +186,6 @@ def compute_lambdas_basket(
         mu_home = mu_home_base
         mu_away = mu_away_base
 
-    # FACTEURS
     fc_h, fc_a = facteur_classement(pd, pe, te)
     mu_home *= fc_h
     mu_away *= fc_a
@@ -206,7 +197,8 @@ def compute_lambdas_basket(
     mu_home *= facteur_blessures(bd)
     mu_away *= facteur_blessures(be)
     mu_home *= facteur_fatigue(fd)
-    mu_away *= facteur_fatigue(fe)
+    mu_away *= facteur_fatigue(ft := fe)
+    mu_away *= 1.0
 
     mu_home = max(mu_home, 60.0)
     mu_away = max(mu_away, 60.0)
@@ -253,6 +245,11 @@ def proba_total(mu_total, ligne, sigma):
 
 RATIO_1H = 0.51
 RATIO_2H = 0.49
+RATIO_Q1 = 0.27
+RATIO_Q2 = 0.24
+RATIO_Q3 = 0.25
+RATIO_Q4 = 0.24
+SIGMA_QUART = 6.0
 
 
 def analyser_match_basket(
@@ -263,7 +260,8 @@ def analyser_match_basket(
     total_1h=None, total_2h=None,
     ligue=None,
     pace_dom=None, offrtg_dom=None, defrtg_dom=None,
-    pace_ext=None, offrtg_ext=None, defrtg_ext=None
+    pace_ext=None, offrtg_ext=None, defrtg_ext=None,
+    q1=None, q2=None, q3=None, q4=None
 ):
     if h2h_matchs is None:
         h2h_matchs = []
@@ -282,7 +280,6 @@ def analyser_match_basket(
     )
     mu_total = mu_home + mu_away
 
-    # MONEYLINE FT
     p_ml_home, p_ml_away = proba_moneyline(mu_home, mu_away, sigma_ft)
     ml_candidats = []
     if ml_ft and len(ml_ft) == 2:
@@ -293,7 +290,6 @@ def analyser_match_basket(
         if c:
             ml_candidats.append(c)
 
-    # SPREAD FT
     spread_candidats = []
     for l in hcp_lignes:
         hd = l.get("hcp_dom")
@@ -311,7 +307,6 @@ def analyser_match_basket(
             if c:
                 spread_candidats.append(c)
 
-    # TOTAL FT
     total_ft_candidats = []
     for l in ou_lignes:
         ligne = l.get("ligne")
@@ -329,7 +324,6 @@ def analyser_match_basket(
             if c:
                 total_ft_candidats.append(c)
 
-    # 1H
     mu_total_1h = mu_total * RATIO_1H
     mu_home_1h = mu_home * RATIO_1H
     mu_away_1h = mu_away * RATIO_1H
@@ -355,7 +349,6 @@ def analyser_match_basket(
         if c:
             total_1h_candidats.append(c)
 
-    # 2H
     mu_total_2h = mu_total * RATIO_2H
     mu_home_2h = mu_home * RATIO_2H
     mu_away_2h = mu_away * RATIO_2H
@@ -381,7 +374,43 @@ def analyser_match_basket(
         if c:
             total_2h_candidats.append(c)
 
-    # FUSION
+    # QUARTS-TEMPS
+    quart_data = [
+        ("Q1", q1, RATIO_Q1),
+        ("Q2", q2, RATIO_Q2),
+        ("Q3", q3, RATIO_Q3),
+        ("Q4", q4, RATIO_Q4),
+    ]
+    quarts_resultats = {}
+    for nom, data, ratio in quart_data:
+        resultats_q = {"ml": [], "total": [], "mu": round(mu_total * ratio, 1)}
+        if data:
+            mu_q = mu_total * ratio
+            mu_h = mu_home * ratio
+            mu_a = mu_away * ratio
+            total_cfg = data.get("total")
+            ml_cfg = data.get("ml")
+            if total_cfg and len(total_cfg) == 3:
+                ligne_q = total_cfg[0]
+                co_q = total_cfg[1]
+                cu_q = total_cfg[2]
+                p_o, p_u = proba_total(mu_q, ligne_q, SIGMA_QUART)
+                c = eval_candidat(nom + " Over " + str(ligne_q), p_o, co_q, "Total " + nom)
+                if c:
+                    resultats_q["total"].append(c)
+                c = eval_candidat(nom + " Under " + str(ligne_q), p_u, cu_q, "Total " + nom)
+                if c:
+                    resultats_q["total"].append(c)
+            if ml_cfg and len(ml_cfg) == 2:
+                p_h, p_a = proba_moneyline(mu_h, mu_a, SIGMA_QUART)
+                c = eval_candidat(nom + " - Domicile", p_h, ml_cfg[0], "Moneyline " + nom)
+                if c:
+                    resultats_q["ml"].append(c)
+                c = eval_candidat(nom + " - Exterieur", p_a, ml_cfg[1], "Moneyline " + nom)
+                if c:
+                    resultats_q["ml"].append(c)
+        quarts_resultats[nom] = resultats_q
+
     tous = []
     tous.extend(ml_candidats)
     tous.extend(spread_candidats)
@@ -390,6 +419,9 @@ def analyser_match_basket(
     tous.extend(total_1h_candidats)
     tous.extend(ml_2h_candidats)
     tous.extend(total_2h_candidats)
+    for nom in ["Q1", "Q2", "Q3", "Q4"]:
+        tous.extend(quarts_resultats[nom]["ml"])
+        tous.extend(quarts_resultats[nom]["total"])
 
     tous.sort(key=lambda x: x["fiabilite"], reverse=True)
 
@@ -421,5 +453,6 @@ def analyser_match_basket(
         "total_1h_candidats": total_1h_candidats,
         "ml_2h_candidats": ml_2h_candidats,
         "total_2h_candidats": total_2h_candidats,
+        "quarts": quarts_resultats,
         "pari_retenu": pari_retenu,
-        }
+    }
