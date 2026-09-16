@@ -1,15 +1,37 @@
 """
 qfte_engine/basket.py
 ---------------------
-Moteur QFTE V23.0 - Basketball (NBA, Euroleague).
-Distribution Normale + Moneyline/Spread/Total (FT, 1H, 2H).
+Moteur QFTE V23.0 - Basketball multi-ligues.
+Sigma dynamique selon le championnat.
 """
 
 import math
 
 
 # =========================================================
-# 1. HELPERS
+# 1. SIGMA PAR LIGUE (FT, MT)
+# =========================================================
+SIGMA_PAR_LIGUE = {
+    "nba": (11.5, 8.0),
+    "euroleague": (9.0, 7.0),
+    "lnb": (9.5, 7.0),
+    "acb": (9.0, 7.0),
+    "bbl": (9.5, 7.0),
+    "lega": (9.5, 7.0),
+    "ncaa": (10.0, 7.5),
+    "fiba": (10.0, 7.5),
+    "autre": (10.5, 7.5),
+}
+
+
+def get_sigmas(ligue):
+    if not ligue:
+        return (11.0, 8.0)
+    return SIGMA_PAR_LIGUE.get(ligue, (10.5, 7.5))
+
+
+# =========================================================
+# 2. HELPERS
 # =========================================================
 def norm_cdf(x, mu=0.0, sigma=1.0):
     if sigma <= 0:
@@ -25,7 +47,7 @@ def moy(vals):
 
 
 # =========================================================
-# 2. AJUSTEMENTS BASKET
+# 3. AJUSTEMENTS BASKET
 # =========================================================
 def facteur_blessures(a):
     return 0.92 if a else 1.00
@@ -53,7 +75,7 @@ def facteur_h2h(h2h):
 
 
 # =========================================================
-# 3. EV / FIABILITE / STAKE
+# 4. EV / FIABILITE / STAKE
 # =========================================================
 def compute_ev(p, cote):
     if cote <= 0:
@@ -85,7 +107,7 @@ def compute_stake(p, cote, fiab, ev):
 
 
 # =========================================================
-# 4. FILTRES
+# 5. FILTRES
 # =========================================================
 SEUIL_FIABILITE = 0.75
 SEUIL_VALUE = 0.04
@@ -117,7 +139,7 @@ def classify(fiab, ev):
 
 
 # =========================================================
-# 5. CANDIDAT GENERIQUE
+# 6. CANDIDAT GENERIQUE
 # =========================================================
 def eval_candidat(label, p, cote, marche=None):
     if not cote or cote <= 0:
@@ -139,11 +161,12 @@ def eval_candidat(label, p, cote, marche=None):
         "decision": dec,
         "niveau": niv,
         "stake": stake,
-  }
+    }
+
 
 
 # =========================================================
-# 6. CALCUL DES POINTS ATTENDUS (MODELE NORMAL)
+# 7. CALCUL DES POINTS ATTENDUS
 # =========================================================
 def compute_lambdas_basket(home_ctx, home_glob, away_ctx, away_glob,
                             h2h, bd, be, fd, fe, pd, pe, te):
@@ -162,11 +185,9 @@ def compute_lambdas_basket(home_ctx, home_glob, away_ctx, away_glob,
     abp = 0.7 * abp_ctx + 0.3 * abp_g
     abc = 0.7 * abc_ctx + 0.3 * abc_g
 
-    # Points attendus (basket)
     mu_home = (hbp + abc) / 2.0
     mu_away = (abp + hbc) / 2.0
 
-    # Facteurs
     fc_h, fc_a = facteur_classement(pd, pe, te)
     mu_home *= fc_h
     mu_away *= fc_a
@@ -200,11 +221,9 @@ def compute_lambdas_basket(home_ctx, home_glob, away_ctx, away_glob,
 
 
 # =========================================================
-# 7. PROBABILITE MONEYLINE (sans nul)
+# 8. PROBAS MONEYLINE / SPREAD / TOTAL
 # =========================================================
 def proba_moneyline(mu_home, mu_away, sigma):
-    # P(home gagne) = P(home_score > away_score)
-    # Marge = home - away ~ N(mu_home - mu_away, sigma*sqrt(2))
     mu_diff = mu_home - mu_away
     sigma_diff = sigma * math.sqrt(2)
     p_home = 1 - norm_cdf(0, mu_diff, sigma_diff)
@@ -212,20 +231,13 @@ def proba_moneyline(mu_home, mu_away, sigma):
     return p_home, p_away
 
 
-# =========================================================
-# 8. PROBABILITES SPREAD (handicap basket)
-# =========================================================
 def proba_spread(mu_home, mu_away, hcp, sigma):
-    # Marge ajustee = (home - away) + hcp  (hcp negatif → home doit gagner par +)
     mu_ajuste = mu_home - mu_away + hcp
     p_home = 1 - norm_cdf(0, mu_ajuste, sigma * math.sqrt(2))
     p_away = norm_cdf(0, mu_ajuste, sigma * math.sqrt(2))
     return p_home, p_away
 
 
-# =========================================================
-# 9. PROBABILITES OVER/UNDER POINTS
-# =========================================================
 def proba_total(mu_total, ligne, sigma):
     p_over = 1 - norm_cdf(ligne, mu_total, sigma)
     p_under = norm_cdf(ligne, mu_total, sigma)
@@ -233,23 +245,22 @@ def proba_total(mu_total, ligne, sigma):
 
 
 # =========================================================
-# 10. RATIOS MI-TEMPS BASKET
+# 9. RATIOS MI-TEMPS BASKET
 # =========================================================
 RATIO_1H = 0.51
 RATIO_2H = 0.49
-SIGMA_FT = 11.0
-SIGMA_MT = 8.0
 
 
 # =========================================================
-# 11. ANALYSE COMPLETE BASKET
+# 10. ANALYSE COMPLETE BASKET
 # =========================================================
 def analyser_match_basket(
     home_ctx, home_glob, away_ctx, away_glob,
     h2h_matchs, hcp_lignes, ou_lignes,
     bd, be, fd, fe, pd, pe, te,
     ml_ft=None, ml_1h=None, ml_2h=None,
-    total_1h=None, total_2h=None
+    total_1h=None, total_2h=None,
+    ligue=None
 ):
     if h2h_matchs is None:
         h2h_matchs = []
@@ -258,14 +269,16 @@ def analyser_match_basket(
     if ou_lignes is None:
         ou_lignes = []
 
+    sigma_ft, sigma_mt = get_sigmas(ligue)
+
     mu_home, mu_away, details = compute_lambdas_basket(
         home_ctx, home_glob, away_ctx, away_glob,
         h2h_matchs, bd, be, fd, fe, pd, pe, te
     )
     mu_total = mu_home + mu_away
 
-    # --- MONEYLINE FT ---
-    p_ml_home, p_ml_away = proba_moneyline(mu_home, mu_away, SIGMA_FT)
+    # MONEYLINE FT
+    p_ml_home, p_ml_away = proba_moneyline(mu_home, mu_away, sigma_ft)
     ml_candidats = []
     if ml_ft and len(ml_ft) == 2:
         c = eval_candidat("FT - Domicile", p_ml_home, ml_ft[0], "Moneyline FT")
@@ -275,7 +288,7 @@ def analyser_match_basket(
         if c:
             ml_candidats.append(c)
 
-    # --- SPREAD FT ---
+    # SPREAD FT
     spread_candidats = []
     for l in hcp_lignes:
         hd = l.get("hcp_dom")
@@ -283,17 +296,17 @@ def analyser_match_basket(
         cd = l.get("cote_dom")
         ce = l.get("cote_ext")
         if hd is not None and cd:
-            p_dom, _ = proba_spread(mu_home, mu_away, hd, SIGMA_FT)
+            p_dom, _ = proba_spread(mu_home, mu_away, hd, sigma_ft)
             c = eval_candidat("Spread " + str(hd) + " (Dom)", p_dom, cd, "Spread FT")
             if c:
                 spread_candidats.append(c)
         if he is not None and ce:
-            _, p_ext = proba_spread(mu_home, mu_away, he, SIGMA_FT)
+            _, p_ext = proba_spread(mu_home, mu_away, he, sigma_ft)
             c = eval_candidat("Spread " + str(he) + " (Ext)", p_ext, ce, "Spread FT")
             if c:
                 spread_candidats.append(c)
 
-    # --- TOTAL POINTS FT ---
+    # TOTAL FT
     total_ft_candidats = []
     for l in ou_lignes:
         ligne = l.get("ligne")
@@ -301,7 +314,7 @@ def analyser_match_basket(
         cu = l.get("cote_under")
         if ligne is None:
             continue
-        p_over, p_under = proba_total(mu_total, ligne, SIGMA_FT)
+        p_over, p_under = proba_total(mu_total, ligne, sigma_ft)
         if co:
             c = eval_candidat("Over " + str(ligne), p_over, co, "Total FT")
             if c:
@@ -311,13 +324,13 @@ def analyser_match_basket(
             if c:
                 total_ft_candidats.append(c)
 
-    # --- MI-TEMPS 1H ---
+    # 1H
     mu_total_1h = mu_total * RATIO_1H
     mu_home_1h = mu_home * RATIO_1H
     mu_away_1h = mu_away * RATIO_1H
     ml_1h_candidats = []
     total_1h_candidats = []
-    p_1h_home, p_1h_away = proba_moneyline(mu_home_1h, mu_away_1h, SIGMA_MT)
+    p_1h_home, p_1h_away = proba_moneyline(mu_home_1h, mu_away_1h, sigma_mt)
     if ml_1h and len(ml_1h) == 2:
         c = eval_candidat("1H - Domicile", p_1h_home, ml_1h[0], "Moneyline 1H")
         if c:
@@ -329,7 +342,7 @@ def analyser_match_basket(
         ligne_1h = total_1h[0]
         co = total_1h[1]
         cu = total_1h[2]
-        p_over, p_under = proba_total(mu_total_1h, ligne_1h, SIGMA_MT)
+        p_over, p_under = proba_total(mu_total_1h, ligne_1h, sigma_mt)
         c = eval_candidat("1H Over " + str(ligne_1h), p_over, co, "Total 1H")
         if c:
             total_1h_candidats.append(c)
@@ -337,13 +350,13 @@ def analyser_match_basket(
         if c:
             total_1h_candidats.append(c)
 
-    # --- MI-TEMPS 2H ---
+    # 2H
     mu_total_2h = mu_total * RATIO_2H
     mu_home_2h = mu_home * RATIO_2H
     mu_away_2h = mu_away * RATIO_2H
     ml_2h_candidats = []
     total_2h_candidats = []
-    p_2h_home, p_2h_away = proba_moneyline(mu_home_2h, mu_away_2h, SIGMA_MT)
+    p_2h_home, p_2h_away = proba_moneyline(mu_home_2h, mu_away_2h, sigma_mt)
     if ml_2h and len(ml_2h) == 2:
         c = eval_candidat("2H - Domicile", p_2h_home, ml_2h[0], "Moneyline 2H")
         if c:
@@ -355,7 +368,7 @@ def analyser_match_basket(
         ligne_2h = total_2h[0]
         co = total_2h[1]
         cu = total_2h[2]
-        p_over, p_under = proba_total(mu_total_2h, ligne_2h, SIGMA_MT)
+        p_over, p_under = proba_total(mu_total_2h, ligne_2h, sigma_mt)
         c = eval_candidat("2H Over " + str(ligne_2h), p_over, co, "Total 2H")
         if c:
             total_2h_candidats.append(c)
@@ -363,7 +376,7 @@ def analyser_match_basket(
         if c:
             total_2h_candidats.append(c)
 
-    # --- FUSION TOUS CANDIDATS ---
+    # FUSION
     tous = []
     tous.extend(ml_candidats)
     tous.extend(spread_candidats)
@@ -387,6 +400,8 @@ def analyser_match_basket(
         "mu_total": round(mu_total, 1),
         "mu_total_1h": round(mu_total_1h, 1),
         "mu_total_2h": round(mu_total_2h, 1),
+        "sigma_ft": sigma_ft,
+        "sigma_mt": sigma_mt,
         "details": details,
         "p_ml_home": round(p_ml_home, 4),
         "p_ml_away": round(p_ml_away, 4),
@@ -402,4 +417,4 @@ def analyser_match_basket(
         "ml_2h_candidats": ml_2h_candidats,
         "total_2h_candidats": total_2h_candidats,
         "pari_retenu": pari_retenu,
-}
+    }
