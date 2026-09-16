@@ -51,6 +51,22 @@
         </div>
 
         <div class="section-box">
+            <h2>🏆 Championnat (Basket uniquement)</h2>
+            <p class="hint">Impacte le calcul de l'écart-type (sigma) pour les analyses basket.</p>
+            <select name="ligue">
+                <option value="nba">🇺🇸 NBA (sigma 11.5)</option>
+                <option value="euroleague">🇪🇺 Euroleague (sigma 9.0)</option>
+                <option value="lnb">🇫🇷 LNB Pro A (sigma 9.5)</option>
+                <option value="acb">🇪🇸 ACB Espagne (sigma 9.0)</option>
+                <option value="bbl">🇩🇪 BBL Allemagne (sigma 9.5)</option>
+                <option value="lega">🇮🇹 Lega Basket Italie (sigma 9.5)</option>
+                <option value="ncaa">🎓 NCAA (sigma 10.0)</option>
+                <option value="fiba">🌍 FIBA (sigma 10.0)</option>
+                <option value="autre">🌐 Autre (sigma 10.5)</option>
+            </select>
+        </div>
+
+        <div class="section-box">
             <h2>📋 Match à analyser</h2>
             <label>Compétition</label>
             <input type="text" name="competition" placeholder="Ex : Ligue 1, NBA..." required>
@@ -126,7 +142,7 @@
             </div>
         </details>
 
-        
+     
         <details>
             <summary>📈 Cotes 1X2 (Foot) / Moneyline FT (Basket)</summary>
             <div class="details-content">
@@ -250,4 +266,4 @@
     </form>
 
 </body>
-</html>
+</html>   
