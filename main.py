@@ -127,48 +127,48 @@ async def analyser(request: Request):
         "date_match": date_match, "resultats": r,
     }
     analyse_json = json.dumps(analyse_complete, ensure_ascii=False).replace("</", "<\\/")
-# Décision
-if r["pari_retenu"]:
-    p = r["pari_retenu"]
-    tl = p.get("type", "1X2")
-    decision_html = f"""
-    <div class="box" style="border:2px solid #4ade80;">
-        <h2 style="color:#4ade80;">🟢 PARI RETENU ({tl})</h2>
-        <div class="ligne"><span class="label">Sélection</span><span class="val">{p['selection']}</span></div>
-        <div class="ligne"><span class="label">Cote</span><span class="val">{p['cote']}</span></div>
-        <div class="ligne"><span class="label">Probabilité</span><span class="val">{p['p']*100:.2f}%</span></div>
-        <div class="ligne"><span class="label">EV net</span><span class="val" style="color:#4ade80;">{p['ev']*100:+.2f}%</span></div>
-        <div class="ligne"><span class="label">Fiabilité</span><span class="val">{p['fiabilite']}</span></div>
-        <div class="ligne"><span class="label">Niveau</span><span class="val">{p['niveau']}</span></div>
-        <div class="ligne"><span class="label">Décision</span><span class="val">{p['decision']}</span></div>
-        <div class="ligne"><span class="label">💰 Stake</span><span class="val">{p['stake']}% bankroll</span></div>
-    </div>
-    """
-else:
-    decision_html = """
-    <div class="box" style="border:2px solid #ef4444;">
-        <h2 style="color:#ef4444;">🔴 AUCUN PARI RETENU</h2>
-        <p style="color:#ccc;font-size:13px;">Aucune sélection ne respecte les filtres V23.0.</p>
-    </div>
-    """
 
-securite_html = ""
-if r.get("ou_securite"):
-    s = r["ou_securite"]
-    ec = "#4ade80" if s["ev"] >= 0 else "#ef4444"
-    st = '✅ PASSE' if s['passe_filtres'] else '⚠️ Partiel'
-    securite_html = f"""
-    <div class="box" style="border:2px solid #60a5fa;">
-        <h2 style="color:#60a5fa;">🛡️ SÉCURITÉ (Over/Under)</h2>
-        <div class="ligne"><span class="label">Marché</span><span class="val">{s['type']} {s['ligne']} buts</span></div>
-        <div class="ligne"><span class="label">Cote</span><span class="val">{s['cote']}</span></div>
-        <div class="ligne"><span class="label">P(effective)</span><span class="val">{s['p']*100:.2f}%</span></div>
-        <div class="ligne"><span class="label">EV net</span><span class="val" style="color:{ec};">{s['ev']*100:+.2f}%</span></div>
-        <div class="ligne"><span class="label">Fiabilité</span><span class="val">{s['fiabilite']}</span></div>
-        <div class="ligne"><span class="label">Filtres</span><span class="val">{st}</span></div>
-    </div>
-    """
+    # Décision
+    if r["pari_retenu"]:
+        p = r["pari_retenu"]
+        tl = p.get("type", "1X2")
+        decision_html = f"""
+        <div class="box" style="border:2px solid #4ade80;">
+            <h2 style="color:#4ade80;">🟢 PARI RETENU ({tl})</h2>
+            <div class="ligne"><span class="label">Sélection</span><span class="val">{p['selection']}</span></div>
+            <div class="ligne"><span class="label">Cote</span><span class="val">{p['cote']}</span></div>
+            <div class="ligne"><span class="label">Probabilité</span><span class="val">{p['p']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">EV net</span><span class="val" style="color:#4ade80;">{p['ev']*100:+.2f}%</span></div>
+            <div class="ligne"><span class="label">Fiabilité</span><span class="val">{p['fiabilite']}</span></div>
+            <div class="ligne"><span class="label">Niveau</span><span class="val">{p['niveau']}</span></div>
+            <div class="ligne"><span class="label">Décision</span><span class="val">{p['decision']}</span></div>
+            <div class="ligne"><span class="label">💰 Stake</span><span class="val">{p['stake']}% bankroll</span></div>
+        </div>
+        """
+    else:
+        decision_html = """
+        <div class="box" style="border:2px solid #ef4444;">
+            <h2 style="color:#ef4444;">🔴 AUCUN PARI RETENU</h2>
+            <p style="color:#ccc;font-size:13px;">Aucune sélection ne respecte les filtres V23.0.</p>
+        </div>
+        """
 
+    securite_html = ""
+    if r.get("ou_securite"):
+        s = r["ou_securite"]
+        ec = "#4ade80" if s["ev"] >= 0 else "#ef4444"
+        st = '✅ PASSE' if s['passe_filtres'] else '⚠️ Partiel'
+        securite_html = f"""
+        <div class="box" style="border:2px solid #60a5fa;">
+            <h2 style="color:#60a5fa;">🛡️ SÉCURITÉ (Over/Under)</h2>
+            <div class="ligne"><span class="label">Marché</span><span class="val">{s['type']} {s['ligne']} buts</span></div>
+            <div class="ligne"><span class="label">Cote</span><span class="val">{s['cote']}</span></div>
+            <div class="ligne"><span class="label">P(effective)</span><span class="val">{s['p']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">EV net</span><span class="val" style="color:{ec};">{s['ev']*100:+.2f}%</span></div>
+            <div class="ligne"><span class="label">Fiabilité</span><span class="val">{s['fiabilite']}</span></div>
+            <div class="ligne"><span class="label">Filtres</span><span class="val">{st}</span></div>
+        </div>
+        """
 def bloc_candidat(c):
     ec = "#4ade80" if c["ev"] >= 0 else "#ef4444"
     if c["passe_filtres"]:
@@ -290,86 +290,86 @@ details_html = f"""
     <div class="ligne"><span class="label">Fatigue dom./ext.</span><span class="val">{d['f_fatigue_dom']} / {d['f_fatigue_ext']}</span></div>
 </div>
 """
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>QFTE — Résultats</title>
+        <style>{STYLE}</style>
+    </head>
+    <body>
+        <div style="text-align:center;margin-bottom:12px;">
+            <a href="/historique" class="btn btn-secondary" style="margin:0;">📊 Historique</a>
+        </div>
+        <h1>🦁 QFTE V23.0 — Analyse</h1>
+        <p style="text-align:center;color:#999;font-size:12px;">{equipe_domicile} vs {equipe_exterieur} — {competition}</p>
 
-html = f"""
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QFTE — Résultats</title>
-    <style>{STYLE}</style>
-</head>
-<body>
-    <div style="text-align:center;margin-bottom:12px;">
-        <a href="/historique" class="btn btn-secondary" style="margin:0;">📊 Historique</a>
-    </div>
-    <h1>🦁 QFTE V23.0 — Analyse</h1>
-    <p style="text-align:center;color:#999;font-size:12px;">{equipe_domicile} vs {equipe_exterieur} — {competition}</p>
+        {decision_html}
+        {securite_html}
 
-    {decision_html}
-    {securite_html}
+        <div class="box">
+            <h2>⚽ Buts attendus (λ)</h2>
+            <div class="ligne"><span class="label">{equipe_domicile} (total)</span><span class="val">{r['lambda_home']}</span></div>
+            <div class="ligne"><span class="label">{equipe_exterieur} (total)</span><span class="val">{r['lambda_away']}</span></div>
+            <div class="ligne"><span class="label">{equipe_domicile} (HT)</span><span class="val">{r['lambda_ht_home']}</span></div>
+            <div class="ligne"><span class="label">{equipe_exterieur} (HT)</span><span class="val">{r['lambda_ht_away']}</span></div>
+            <div class="ligne"><span class="label">{equipe_domicile} (2H)</span><span class="val">{r['lambda_2h_home']}</span></div>
+            <div class="ligne"><span class="label">{equipe_exterieur} (2H)</span><span class="val">{r['lambda_2h_away']}</span></div>
+        </div>
 
-    <div class="box">
-        <h2>⚽ Buts attendus (λ)</h2>
-        <div class="ligne"><span class="label">{equipe_domicile} (total)</span><span class="val">{r['lambda_home']}</span></div>
-        <div class="ligne"><span class="label">{equipe_exterieur} (total)</span><span class="val">{r['lambda_away']}</span></div>
-        <div class="ligne"><span class="label">{equipe_domicile} (HT)</span><span class="val">{r['lambda_ht_home']}</span></div>
-        <div class="ligne"><span class="label">{equipe_exterieur} (HT)</span><span class="val">{r['lambda_ht_away']}</span></div>
-        <div class="ligne"><span class="label">{equipe_domicile} (2H)</span><span class="val">{r['lambda_2h_home']}</span></div>
-        <div class="ligne"><span class="label">{equipe_exterieur} (2H)</span><span class="val">{r['lambda_2h_away']}</span></div>
-    </div>
+        <div class="box">
+            <h2>🎯 Probabilités 1X2 (temps plein)</h2>
+            <div class="ligne"><span class="label">1</span><span class="val">{r['p1']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">X</span><span class="val">{r['px']*100:.2f}%</span></div>
+            <div class="ligne"><span class="label">2</span><span class="val">{r['p2']*100:.2f}%</span></div>
+        </div>
 
-    <div class="box">
-        <h2>🎯 Probabilités 1X2 (temps plein)</h2>
-        <div class="ligne"><span class="label">1</span><span class="val">{r['p1']*100:.2f}%</span></div>
-        <div class="ligne"><span class="label">X</span><span class="val">{r['px']*100:.2f}%</span></div>
-        <div class="ligne"><span class="label">2</span><span class="val">{r['p2']*100:.2f}%</span></div>
-    </div>
+        <div class="box">
+            <h2>🎲 Top 3 scores probables</h2>
+            {scores_html}
+        </div>
 
-    <div class="box">
-        <h2>🎲 Top 3 scores probables</h2>
-        {scores_html}
-    </div>
+        {divergences_html}
 
-    {divergences_html}
+        <h2 style="text-align:left;">📋 Détail — 1X2</h2>
+        {candidats_html}
 
-    <h2 style="text-align:left;">📋 Détail — 1X2</h2>
-    {candidats_html}
+        <h2 style="text-align:left;">🎯 Détail — Handicap</h2>
+        {handicap_html}
 
-    <h2 style="text-align:left;">🎯 Détail — Handicap</h2>
-    {handicap_html}
+        <h2 style="text-align:left;">⚽ Détail — Over / Under</h2>
+        {ou_html}
 
-    <h2 style="text-align:left;">⚽ Détail — Over / Under</h2>
-    {ou_html}
+        <h2 style="text-align:left;">🕐 Détail — 2 Mi-temps</h2>
+        {mt2_html}
 
-    <h2 style="text-align:left;">🕐 Détail — 2 Mi-temps</h2>
-    {mt2_html}
+        {details_html}
 
-    {details_html}
+        <div style="text-align:center;margin:24px 0;">
+            <button class="btn" onclick="sauvegarder()">💾 Sauvegarder</button>
+            <a href="/" class="btn btn-secondary">← Nouvelle analyse</a>
+        </div>
 
-    <div style="text-align:center;margin:24px 0;">
-        <button class="btn" onclick="sauvegarder()">💾 Sauvegarder</button>
-        <a href="/" class="btn btn-secondary">← Nouvelle analyse</a>
-    </div>
+        <script>
+        const ANALYSE = {analyse_json};
+        function sauvegarder() {{
+            try {{
+                let hist = JSON.parse(localStorage.getItem('qfte_analyses') || '[]');
+                hist = hist.filter(a => !(a.equipe_domicile === ANALYSE.equipe_domicile && a.equipe_exterieur === ANALYSE.equipe_exterieur && a.date_match === ANALYSE.date_match));
+                hist.unshift(ANALYSE);
+                if (hist.length > 200) hist = hist.slice(0, 200);
+                localStorage.setItem('qfte_analyses', JSON.stringify(hist));
+                alert('✅ Analyse sauvegardée !');
+            }} catch(e) {{ alert('❌ Erreur : ' + e.message); }}
+        }}
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
-    <script>
-    const ANALYSE = {analyse_json};
-    function sauvegarder() {{
-        try {{
-            let hist = JSON.parse(localStorage.getItem('qfte_analyses') || '[]');
-            hist = hist.filter(a => !(a.equipe_domicile === ANALYSE.equipe_domicile && a.equipe_exterieur === ANALYSE.equipe_exterieur && a.date_match === ANALYSE.date_match));
-            hist.unshift(ANALYSE);
-            if (hist.length > 200) hist = hist.slice(0, 200);
-            localStorage.setItem('qfte_analyses', JSON.stringify(hist));
-            alert('✅ Analyse sauvegardée !');
-        }} catch(e) {{ alert('❌ Erreur : ' + e.message); }}
-    }}
-    </script>
-</body>
-</html>
-"""
-return HTMLResponse(content=html)
 
 HISTORIQUE_HTML = """
 <!DOCTYPE html>
