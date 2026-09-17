@@ -167,6 +167,10 @@ def bloc_candidat(c):
         signe = "+" if c["ajustement_stacking"] > 0 else ""
         col_aj = "#4ade80" if c["ajustement_stacking"] > 0 else "#ef4444"
         out += '<div class="ligne"><span class="label">Ajust. Stacking</span><span class="val" style="color:' + col_aj + ';">' + signe + str(c["ajustement_stacking"]) + ' (PCS ' + str(c.get("pcs_label", "")) + ')</span></div>'
+    if c.get("ajustement_consistency") and c["ajustement_consistency"] != 0:
+        signe = "+" if c["ajustement_consistency"] > 0 else ""
+        col_aj = "#4ade80" if c["ajustement_consistency"] > 0 else "#ef4444"
+        out += '<div class="ligne"><span class="label">Ajust. Cross-Market</span><span class="val" style="color:' + col_aj + ';">' + signe + str(c["ajustement_consistency"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">Fiabilite finale</span><span class="val">' + str(c["fiabilite"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
     out += rh
@@ -176,7 +180,7 @@ def bloc_candidat(c):
 
 def bloc_forensics(forensics):
     if not forensics or not forensics.get("disponible"):
-        return '<div class="box" style="border:2px solid #64748b;background:#0f0f1a;"><h2 style="color:#64748b;">🔎 MARKET FORENSICS</h2><p style="color:#666;font-size:13px;">Donnees insuffisantes (cotes ouverture ou actuelles manquantes).</p></div>'
+        return '<div class="box" style="border:2px solid #64748b;background:#0f0f1a;"><h2 style="color:#64748b;">🔎 MARKET FORENSICS</h2><p style="color:#666;font-size:13px;">Donnees insuffisantes.</p></div>'
     mouvements = forensics["mouvements"]
     pattern = forensics["pattern"]
     clv = forensics["clv"]
@@ -202,7 +206,6 @@ def bloc_forensics(forensics):
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">CLV predictif</span></div>'
     clv_col = "#4ade80" if clv["clv_predictif"] > 0.02 else ("#ef4444" if clv["clv_predictif"] < -0.02 else "#eab308")
     html += '<div class="ligne"><span class="label">CLV global</span><span class="val" style="color:' + clv_col + ';">' + str(round(clv["clv_predictif"] * 100, 2)) + '%</span></div>'
-    html += '<div class="ligne"><span class="label" style="font-size:12px;color:#888;">' + clv["interpretation"] + '</span></div>'
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Sharp Money Score</span></div>'
     sm_col = "#4ade80" if sharp["score"] > 0.2 else ("#ef4444" if sharp["score"] < -0.2 else "#eab308")
     html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + sm_col + ';">' + str(sharp["score"]) + '</span></div>'
@@ -240,7 +243,6 @@ def bloc_stacking(stacking):
     html += '<div class="ligne" style="margin-top:6px;"><span class="label" style="color:#a855f7;font-weight:bold;">Consensus global</span></div>'
     html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + col_cons + ';font-size:16px;">' + str(cons) + '</span></div>'
     html += '<div class="ligne"><span class="label">Ecart-type predictions</span><span class="val">' + str(et) + '</span></div>'
-    html += '<div class="ligne"><span class="label">Interpretation</span><span class="val">' + stacking["consensus_1"]["interpretation"] + '</span></div>'
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#a855f7;font-weight:bold;">Poids adaptatifs</span></div>'
     html += '<div class="ligne"><span class="label">Poisson</span><span class="val">' + str(poids["w_poisson"]) + '</span></div>'
     html += '<div class="ligne"><span class="label">Dixon-Coles</span><span class="val">' + str(poids["w_dc"]) + '</span></div>'
@@ -254,6 +256,70 @@ def bloc_stacking(stacking):
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#a855f7;font-weight:bold;">Prediction Confidence Score</span></div>'
     html += '<div class="ligne"><span class="label">PCS</span><span class="val" style="color:' + pcs_col + ';font-size:16px;">' + str(pcs["pcs"]) + '</span></div>'
     html += '<div class="ligne"><span class="label">Label</span><span class="val" style="color:' + pcs_col + ';">' + pcs["label"] + '</span></div>'
+    html += '</div>'
+    return html
+
+
+def bloc_cross_market(cm):
+    if not cm or not cm.get("disponible"):
+        return '<div class="box" style="border:2px solid #64748b;background:#0f0f1a;"><h2 style="color:#64748b;">🔀 CROSS-MARKET CORRELATION</h2><p style="color:#666;font-size:13px;">Non disponible.</p></div>'
+    incoherences = cm["incoherences"]
+    arbitrages = cm["arbitrages"]
+    cons = cm["consistency"]
+
+    if cons["consistency"] >= 0.85:
+        col_c = "#4ade80"
+    elif cons["consistency"] >= 0.70:
+        col_c = "#22c55e"
+    elif cons["consistency"] >= 0.50:
+        col_c = "#eab308"
+    else:
+        col_c = "#ef4444"
+
+    html = '<div class="box" style="border:2px solid #14b8a6;background:#0a1a1a;">'
+    html += '<h2 style="color:#14b8a6;">🔀 CROSS-MARKET CORRELATION</h2>'
+    html += '<div class="ligne"><span class="label">Incoherences detectees</span><span class="val">' + str(cm["nb_incoherences"]) + '</span></div>'
+    if incoherences:
+        for inc in incoherences:
+            niv = inc.get("niveau", "?")
+            if niv == "MAJEURE":
+                col_i = "#ef4444"
+            elif niv == "MODEREE":
+                col_i = "#eab308"
+            else:
+                col_i = "#4ade80"
+            html += '<div class="box" style="margin-top:8px;background:#0a0f0f;border-color:' + col_i + ';padding-left:10px;">'
+            html += '<div class="ligne"><span class="label">Marche</span><span class="val">' + inc.get("marche", "?") + '</span></div>'
+            html += '<div class="ligne"><span class="label">Reference</span><span class="val" style="font-size:12px;">' + inc.get("reference", "-") + '</span></div>'
+            html += '<div class="ligne"><span class="label">P_marche</span><span class="val">' + str(round(inc["p_marche"] * 100, 1)) + '%</span></div>'
+            if inc.get("p_coherente") is not None:
+                html += '<div class="ligne"><span class="label">P_coherente</span><span class="val">' + str(round(inc["p_coherente"] * 100, 1)) + '%</span></div>'
+            html += '<div class="ligne"><span class="label">Ecart relatif</span><span class="val" style="color:' + col_i + ';">' + str(round(inc["ecart_relatif"] * 100, 1)) + '%</span></div>'
+            html += '<div class="ligne"><span class="label">Niveau</span><span class="val" style="color:' + col_i + ';">' + niv + '</span></div>'
+            html += '<div class="ligne"><span class="label" style="font-size:12px;color:#aaa;">' + inc.get("interpretation", "") + '</span></div>'
+            html += '</div>'
+    else:
+        html += '<p style="color:#888;font-size:13px;margin-top:8px;">Pas d\'incoherence majeure detectee.</p>'
+
+    if arbitrages:
+        html += '<h2 style="color:#22c55e;margin-top:12px;">🔥 ARBITRAGES DETECTES</h2>'
+        for arb in arbitrages:
+            html += '<div class="box" style="background:#0a1a0a;border-color:#22c55e;padding-left:10px;">'
+            html += '<div class="ligne"><span class="label">Marche</span><span class="val">' + arb["marche"] + '</span></div>'
+            html += '<div class="ligne"><span class="label">Option 1</span><span class="val">' + arb["candidat_1"] + ' @ ' + str(arb["cote_1"]) + '</span></div>'
+            html += '<div class="ligne"><span class="label">Option 2</span><span class="val">' + arb["candidat_2"] + ' @ ' + str(arb["cote_2"]) + '</span></div>'
+            html += '<div class="ligne"><span class="label">Profit</span><span class="val" style="color:#22c55e;">+' + str(arb["profit_pct"]) + '%</span></div>'
+            html += '</div>'
+
+    html += '<div class="box" style="margin-top:12px;background:#0a0f0f;border-color:' + col_c + ';">'
+    html += '<h2 style="color:' + col_c + ';">📐 CONSISTENCY SCORE</h2>'
+    html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + col_c + ';font-size:16px;">' + str(cons["consistency"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Label</span><span class="val" style="color:' + col_c + ';">' + cons["label"] + '</span></div>'
+    html += '<div class="ligne"><span class="label">Incoh. majeures</span><span class="val">' + str(cons["nb_incoherences_majeures"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Incoh. moderees</span><span class="val">' + str(cons["nb_incoherences_moderees"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + cons["interpretation"] + '</span></div>'
+    html += '</div>'
+
     html += '</div>'
     return html
 
@@ -359,6 +425,7 @@ async def analyser(request: Request):
     html += '<h1>QFTE V23.0 - Analyse</h1>'
     html += '<p style="text-align:center;color:#999;font-size:12px;">' + eq_dom + ' vs ' + eq_ext + ' - ' + competition + ' (' + sport + ')</p>'
 
+    # === PARI RETENU ===
     if r["pari_retenu"]:
         p = r["pari_retenu"]
         html += '<div class="box" style="border:2px solid #4ade80;">'
@@ -367,8 +434,9 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(p["cote"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Probabilite</span><span class="val">' + str(round(p["p"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:#4ade80;">' + str(round(p["ev"] * 100, 2)) + '%</span></div>'
-        if p.get("fiabilite_origine") is not None and p.get("ajustement_forensics"):
+        if p.get("fiabilite_origine") is not None:
             html += '<div class="ligne"><span class="label">Fiab. origine</span><span class="val">' + str(p["fiabilite_origine"]) + '</span></div>'
+        if p.get("ajustement_forensics") and p["ajustement_forensics"] != 0:
             signe = "+" if p["ajustement_forensics"] > 0 else ""
             col_aj = "#4ade80" if p["ajustement_forensics"] > 0 else "#ef4444"
             html += '<div class="ligne"><span class="label">Ajust. Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(p["ajustement_forensics"]) + '</span></div>'
@@ -376,6 +444,10 @@ async def analyser(request: Request):
             signe = "+" if p["ajustement_stacking"] > 0 else ""
             col_aj = "#4ade80" if p["ajustement_stacking"] > 0 else "#ef4444"
             html += '<div class="ligne"><span class="label">Ajust. Stacking</span><span class="val" style="color:' + col_aj + ';">' + signe + str(p["ajustement_stacking"]) + '</span></div>'
+        if p.get("ajustement_consistency") and p["ajustement_consistency"] != 0:
+            signe = "+" if p["ajustement_consistency"] > 0 else ""
+            col_aj = "#4ade80" if p["ajustement_consistency"] > 0 else "#ef4444"
+            html += '<div class="ligne"><span class="label">Ajust. Cross-Market</span><span class="val" style="color:' + col_aj + ';">' + signe + str(p["ajustement_consistency"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Fiabilite finale</span><span class="val">' + str(p["fiabilite"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Niveau</span><span class="val">' + p["niveau"] + '</span></div>'
         html += '<div class="ligne"><span class="label">Decision</span><span class="val">' + p["decision"] + '</span></div>'
@@ -388,6 +460,9 @@ async def analyser(request: Request):
         html += '<h2 style="color:#ef4444;">AUCUN PARI RETENU</h2>'
         html += '<p style="color:#ccc;font-size:13px;">Aucune selection ne respecte les filtres V23.0.</p>'
         html += '</div>'
+
+    if r.get("cross_market"):
+        html += bloc_cross_market(r["cross_market"])
 
     if r.get("stacking"):
         html += bloc_stacking(r["stacking"])
@@ -608,6 +683,10 @@ async def analyser(request: Request):
                     signe = "+" if h["ajustement_stacking"] > 0 else ""
                     col_aj = "#4ade80" if h["ajustement_stacking"] > 0 else "#ef4444"
                     html += '<div class="ligne"><span class="label">Ajust. Stacking</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_stacking"]) + '</span></div>'
+                if h.get("ajustement_consistency") and h["ajustement_consistency"] != 0:
+                    signe = "+" if h["ajustement_consistency"] > 0 else ""
+                    col_aj = "#4ade80" if h["ajustement_consistency"] > 0 else "#ef4444"
+                    html += '<div class="ligne"><span class="label">Ajust. Cross-Market</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_consistency"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(h["fiabilite"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
                 html += rh
