@@ -805,7 +805,7 @@ def analyser_match_football(
     }
 
     signature_dict = {
-        "    "prior_ligue": signature["prior_ligue"],
+        "prior_ligue": signature["prior_ligue"],
     "lambda_home_brut": signature["lambda_home_brut"],
     "lambda_away_brut": signature["lambda_away_brut"],
     "lambda_home_bayesien": signature["lambda_home_bayesien"],
