@@ -134,6 +134,76 @@ def fopt(form, k):
         return None
 
 
+
+def bloc_visuel(r, sport):
+    html = ''
+
+    f = r.get("forensics")
+    if f and f.get("disponible"):
+        sh = f["sharpe_signal"]
+        html += '<div style="border:2px solid #0ea5e9;background:#0a1620;padding:10px;margin-top:12px;border-radius:8px;">'
+        html += '<h3 style="color:#0ea5e9;margin-top:0;">🔎 MARKET FORENSICS</h3>'
+        m = f["mouvements"]
+        for k in ["1", "X", "2"]:
+            mo = m.get(k)
+            if not mo:
+                continue
+            if mo["delta"] <= -0.05:
+                col = "#4ade80"
+            elif mo["delta"] >= 0.05:
+                col = "#ef4444"
+            else:
+                col = "#eab308"
+            html += '<p>' + k + ' : ' + str(mo["open"]) + ' -> ' + str(mo["curr"]) + ' <span style="color:' + col + ';">' + str(mo["delta_pct"]) + '%</span></p>'
+        html += '<p>Pattern : <b>' + f["pattern"]["pattern"] + '</b></p>'
+        html += '<p>CLV pred. : ' + str(round(f["clv"]["clv_predictif"] * 100, 2)) + '%</p>'
+        html += '<p>Sharp Money : ' + str(f["sharp_money"]["score"]) + ' (' + f["sharp_money"]["label"] + ')</p>'
+        html += '<p>Efficience : ' + str(f["efficience"]["efficience"]) + '</p>'
+        html += '<p style="color:' + sh["couleur"] + ';font-size:16px;">⭐ SHARPE : ' + str(sh["sharpe_signal"]) + ' (' + sh["label"] + ')</p>'
+        html += '</div>'
+
+    s = r.get("stacking")
+    if s and s.get("disponible"):
+        p = s["poids"]
+        html += '<div style="border:2px solid #a855f7;background:#1a0f2a;padding:10px;margin-top:12px;border-radius:8px;">'
+        html += '<h3 style="color:#a855f7;margin-top:0;">🧠 META-ENSEMBLE STACKING</h3>'
+        html += '<p>Consensus : ' + str(s["consensus_global"]) + '</p>'
+        html += '<p>Poisson : ' + str(p["w_poisson"]) + ' | DC : ' + str(p["w_dc"]) + ' | MC : ' + str(p["w_mc"]) + ' | Bayes : ' + str(p["w_bayes"]) + '</p>'
+        html += '<p>P(1) : ' + str(round(s["p1_final"] * 100, 2)) + '% | P(X) : ' + str(round(s["px_final"] * 100, 2)) + '% | P(2) : ' + str(round(s["p2_final"] * 100, 2)) + '%</p>'
+        html += '<p>PCS : ' + str(s["pcs"]["pcs"]) + ' (' + s["pcs"]["label"] + ')</p>'
+        html += '</div>'
+
+    cm = r.get("cross_market")
+    if cm and cm.get("disponible"):
+        html += '<div style="border:2px solid #14b8a6;background:#0a1a1a;padding:10px;margin-top:12px;border-radius:8px;">'
+        html += '<h3 style="color:#14b8a6;margin-top:0;">🔀 CROSS-MARKET</h3>'
+        html += '<p>Incoherences : ' + str(cm["nb_incoherences"]) + '</p>'
+        for inc in cm["incoherences"]:
+            html += '<p>' + inc.get("marche", "?") + ' : ' + str(round(inc["ecart_relatif"] * 100, 1)) + '% (' + inc["niveau"] + ')</p>'
+        html += '<p>Consistency : ' + str(cm["consistency"]["consistency"]) + ' (' + cm["consistency"]["label"] + ')</p>'
+        html += '</div>'
+
+    if sport == "basketball" and r.get("signature"):
+        sig = r["signature"]
+        html += '<div style="border:2px solid #a855f7;background:#1a0f2a;padding:10px;margin-top:12px;border-radius:8px;">'
+        html += '<h3 style="color:#a855f7;margin-top:0;">🔬 TRUE SIGMA</h3>'
+        html += '<p>Sigma final : ' + str(sig["sigma_final"]) + ' (ligue ' + str(sig["sigma_ligue"]) + ')</p>'
+        html += '<p>Alerte : ' + sig["niveau_alerte"] + ' | Multiplicateur : x' + str(sig["multiplicateur_stake"]) + '</p>'
+        html += '</div>'
+
+    if sport == "football" and r.get("signature"):
+        sigf = r["signature"]
+        html += '<div style="border:2px solid #f59e0b;background:#1a150a;padding:10px;margin-top:12px;border-radius:8px;">'
+        html += '<h3 style="color:#f59e0b;margin-top:0;">🔬 SIGNATURE FOOT</h3>'
+        html += '<p>Prior ligue : ' + str(sigf["prior_ligue"]) + '</p>'
+        html += '<p>Lambda dom : ' + str(sigf["lambda_home_brut"]) + ' -> ' + str(sigf["lambda_home_bayesien"]) + '</p>'
+        html += '<p>Lambda ext : ' + str(sigf["lambda_away_brut"]) + ' -> ' + str(sigf["lambda_away_bayesien"]) + '</p>'
+        html += '</div>'
+
+    return html
+
+
+
 @app.get("/", response_class=HTMLResponse)
 async def accueil(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "titre": "QFTE V23.0"})
@@ -154,7 +224,7 @@ async def health():
     return {"status": "ok", "version": "V23.0"}
 
 
-@app.post("/analyser", response_class=HTMLResponse)
+       @app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
     form = await request.form()
 
@@ -215,6 +285,8 @@ async def analyser(request: Request):
         html += '<p>P(X) : ' + str(round(r["px"] * 100, 2)) + '%</p>'
         html += '<p>P(2) : ' + str(round(r["p2"] * 100, 2)) + '%</p>'
 
+        html += bloc_visuel(r, "football")
+
         html += '<p><a href="/football" style="color:#ffcc00;">Retour</a></p>'
         html += '</body></html>'
         return HTMLResponse(content=html)
@@ -262,6 +334,8 @@ async def analyser(request: Request):
         html += '<p>' + eq_ext + ' : ' + str(r["mu_away"]) + '</p>'
         html += '<p>Total : ' + str(r["mu_total"]) + '</p>'
 
+        html += bloc_visuel(r, "basketball")
+
         html += '<p><a href="/basketball" style="color:#ffcc00;">Retour</a></p>'
         html += '</body></html>'
-        return HTMLResponse(content=html)
+        return HTMLResponse(content=html) 
