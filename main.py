@@ -298,15 +298,16 @@ async def analyser(request: Request):
     te = fi(form, "total_equipes")
 
     if sport == "football":
-        r = analyser_match_football(
-            home_ctx, home_glob, away_ctx, away_glob,
-            o1, ox, o2, c1, cx, c2,
-            "normale", "normal",
-            False, False, False, False,
-            h2h, hcp_lignes, ou_lignes,
-            pd, pe, te,
-            None, None,
-            ligue
+        try:
+            r = analyser_match_football(
+                home_ctx, home_glob, away_ctx, away_glob,
+                o1, ox, o2, c1, cx, c2,
+                "normale", "normal",
+                False, False, False, False,
+                h2h, hcp_lignes, ou_lignes,
+                pd, pe, te,
+                None, None,
+                ligue
         )
 
         html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
