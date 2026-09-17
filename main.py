@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 from fastapi import FastAPI, Request, Form
 from qfte_engine.mvp import analyser_match_football
+from qfte_engine.basket import analyser_match_basket
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -219,10 +220,48 @@ async def analyser(request: Request):
         return HTMLResponse(content=html)
 
     else:
-        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Basket</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
-        html += '<h1 style="color:#ffcc00;">Basketball (moteur a venir)</h1>'
-        html += '<p>Sport : ' + sport + '</p>'
-        html += '<p>Competition : ' + competition + '</p>'
-        html += '<p><a href="/" style="color:#ffcc00;">Retour</a></p>'
-        html += '</body></html>'
-        return HTMLResponse(content=html)
+        ml_ft = parse_ml(form.get("ml_ft", ""))
+ml_1h = parse_ml(form.get("ml_1h", ""))
+ml_2h = parse_ml(form.get("ml_2h", ""))
+total_1h = parse_total_mt(form.get("total_1h", ""))
+total_2h = parse_total_mt(form.get("total_2h", ""))
+q1 = parse_quart(form.get("q1", ""))
+q2 = parse_quart(form.get("q2", ""))
+q3 = parse_quart(form.get("q3", ""))
+q4 = parse_quart(form.get("q4", ""))
+
+r = analyser_match_basket(
+    home_ctx, home_glob, away_ctx, away_glob,
+    h2h, hcp_lignes, ou_lignes,
+    False, False, False, False, pd, pe, te,
+    ml_ft, ml_1h, ml_2h, total_1h, total_2h,
+    ligue,
+    None, None, None,
+    None, None, None,
+    q1, q2, q3, q4,
+    o1, o2, c1, c2
+)
+
+html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+html += '<h1 style="color:#ffcc00;">Analyse Basketball</h1>'
+html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
+
+p = r.get("pari_retenu")
+if p:
+    html += '<h2 style="color:#4ade80;">PARI RETENU</h2>'
+    html += '<p>Selection : ' + p["selection"] + '</p>'
+    html += '<p>Cote : ' + str(p["cote"]) + '</p>'
+    html += '<p>Probabilite : ' + str(round(p["p"] * 100, 2)) + '%</p>'
+    html += '<p>EV : ' + str(round(p["ev"] * 100, 2)) + '%</p>'
+    html += '<p>Fiabilite : ' + str(p["fiabilite"]) + '</p>'
+else:
+    html += '<h2 style="color:#ef4444;">AUCUN PARI RETENU</h2>'
+
+html += '<h2>Points attendus</h2>'
+html += '<p>' + eq_dom + ' : ' + str(r["mu_home"]) + '</p>'
+html += '<p>' + eq_ext + ' : ' + str(r["mu_away"]) + '</p>'
+html += '<p>Total : ' + str(r["mu_total"]) + '</p>'
+
+html += '<p><a href="/basketball" style="color:#ffcc00;">Retour</a></p>'
+html += '</body></html>'
+return HTMLResponse(content=html)
