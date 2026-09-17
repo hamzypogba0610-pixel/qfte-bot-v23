@@ -21,8 +21,14 @@ PRIOR_LIGUE = {
     "primeira": 2.55,
     "championship": 2.60,
     "mls": 2.90,
-    "ligue_1_maroc": 2.30,
+    "champions_league": 3.00,
+    "europa_league": 2.75,
+    "conference_league": 2.90,
+    "coupe_du_monde": 2.60,
+    "euro": 2.50,
     "can": 2.20,
+    "ligue_des_champions_caf": 2.30,
+    "copa_libertadores": 2.50,
     "autre": 2.70,
 }
 
