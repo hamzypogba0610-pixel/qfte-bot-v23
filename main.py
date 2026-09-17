@@ -157,12 +157,16 @@ def bloc_candidat(c):
         out += '<div class="ligne"><span class="label">Stabilite</span><span class="val">' + str(c["stabilite"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(c["cote"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:' + ec + ';">' + str(round(c["ev"] * 100, 2)) + '%</span></div>'
-    if c.get("fiabilite_origine") is not None and c.get("ajustement_forensics") is not None:
+    if c.get("fiabilite_origine") is not None and c.get("ajustement_forensics"):
         if c["ajustement_forensics"] != 0:
             signe = "+" if c["ajustement_forensics"] > 0 else ""
             col_aj = "#4ade80" if c["ajustement_forensics"] > 0 else "#ef4444"
-            out += '<div class="ligne"><span class="label">Fiabilite (origine)</span><span class="val">' + str(c["fiabilite_origine"]) + '</span></div>'
-            out += '<div class="ligne"><span class="label">Ajustement Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(c["ajustement_forensics"]) + '</span></div>'
+            out += '<div class="ligne"><span class="label">Fiab. (origine)</span><span class="val">' + str(c["fiabilite_origine"]) + '</span></div>'
+            out += '<div class="ligne"><span class="label">Ajust. Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(c["ajustement_forensics"]) + '</span></div>'
+    if c.get("ajustement_stacking") and c["ajustement_stacking"] != 0:
+        signe = "+" if c["ajustement_stacking"] > 0 else ""
+        col_aj = "#4ade80" if c["ajustement_stacking"] > 0 else "#ef4444"
+        out += '<div class="ligne"><span class="label">Ajust. Stacking</span><span class="val" style="color:' + col_aj + ';">' + signe + str(c["ajustement_stacking"]) + ' (PCS ' + str(c.get("pcs_label", "")) + ')</span></div>'
     out += '<div class="ligne"><span class="label">Fiabilite finale</span><span class="val">' + str(c["fiabilite"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
     out += rh
@@ -171,66 +175,85 @@ def bloc_candidat(c):
 
 
 def bloc_forensics(forensics):
-    """Genere le bloc HTML MARKET FORENSICS."""
     if not forensics or not forensics.get("disponible"):
         return '<div class="box" style="border:2px solid #64748b;background:#0f0f1a;"><h2 style="color:#64748b;">🔎 MARKET FORENSICS</h2><p style="color:#666;font-size:13px;">Donnees insuffisantes (cotes ouverture ou actuelles manquantes).</p></div>'
-
     mouvements = forensics["mouvements"]
     pattern = forensics["pattern"]
     clv = forensics["clv"]
     sharp = forensics["sharp_money"]
     eff = forensics["efficience"]
     sharpe = forensics["sharpe_signal"]
-
     html = '<div class="box" style="border:2px solid #0ea5e9;background:#0a1620;">'
     html += '<h2 style="color:#0ea5e9;">🔎 MARKET FORENSICS — Analyse du mouvement</h2>'
-
-    # Mouvements
     html += '<div class="ligne" style="margin-top:6px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Mouvement des cotes (ouverture -> actuelle)</span></div>'
     for k in ["1", "X", "2"]:
         m = mouvements.get(k)
         if not m:
             continue
         if m["delta"] <= -0.05:
-            col = "#4ade80"
-            emoji = "🟢"
+            col = "#4ade80"; emoji = "🟢"
         elif m["delta"] >= 0.05:
-            col = "#ef4444"
-            emoji = "🔴"
+            col = "#ef4444"; emoji = "🔴"
         else:
-            col = "#eab308"
-            emoji = "🟡"
+            col = "#eab308"; emoji = "🟡"
         html += '<div class="ligne"><span class="label">' + k + ' : ' + str(m["open"]) + ' -> ' + str(m["curr"]) + '</span><span class="val" style="color:' + col + ';">' + emoji + ' ' + str(m["delta_pct"]) + '% (' + m["label"] + ')</span></div>'
-
-    # Pattern
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Pattern detecte</span></div>'
     html += '<div class="ligne"><span class="label">' + pattern["pattern"] + '</span><span class="val">' + pattern["description"] + '</span></div>'
-
-    # CLV
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">CLV predictif</span></div>'
     clv_col = "#4ade80" if clv["clv_predictif"] > 0.02 else ("#ef4444" if clv["clv_predictif"] < -0.02 else "#eab308")
     html += '<div class="ligne"><span class="label">CLV global</span><span class="val" style="color:' + clv_col + ';">' + str(round(clv["clv_predictif"] * 100, 2)) + '%</span></div>'
     html += '<div class="ligne"><span class="label" style="font-size:12px;color:#888;">' + clv["interpretation"] + '</span></div>'
-
-    # Sharp Money
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Sharp Money Score</span></div>'
     sm_col = "#4ade80" if sharp["score"] > 0.2 else ("#ef4444" if sharp["score"] < -0.2 else "#eab308")
     html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + sm_col + ';">' + str(sharp["score"]) + '</span></div>'
     html += '<div class="ligne"><span class="label">Label</span><span class="val" style="color:' + sm_col + ';">' + sharp["label"] + '</span></div>'
-
-    # Efficience
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Efficience marche</span></div>'
     html += '<div class="ligne"><span class="label">Score</span><span class="val">' + str(eff["efficience"]) + '</span></div>'
     html += '<div class="ligne"><span class="label">Label</span><span class="val">' + eff["label"] + '</span></div>'
-
-    # Sharpe Signal
     html += '<div class="box" style="margin-top:12px;background:#0a0a14;border-color:' + sharpe["couleur"] + ';">'
     html += '<h2 style="color:' + sharpe["couleur"] + ';">⭐ SHARPE SIGNAL</h2>'
     html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + sharpe["couleur"] + ';font-size:18px;">' + str(sharpe["sharpe_signal"]) + '</span></div>'
     html += '<div class="ligne"><span class="label">Label</span><span class="val" style="color:' + sharpe["couleur"] + ';">' + sharpe["label"] + '</span></div>'
     html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + sharpe["interpretation"] + '</span></div>'
     html += '</div>'
+    html += '</div>'
+    return html
 
+
+def bloc_stacking(stacking):
+    if not stacking or not stacking.get("disponible"):
+        return '<div class="box" style="border:2px solid #64748b;background:#0f0f1a;"><h2 style="color:#64748b;">🧠 META-ENSEMBLE STACKING</h2><p style="color:#666;font-size:13px;">Non disponible.</p></div>'
+    poids = stacking["poids"]
+    cons = stacking["consensus_global"]
+    pcs = stacking["pcs"]
+    et = stacking["ecart_type_global"]
+    if cons >= 0.90:
+        col_cons = "#4ade80"
+    elif cons >= 0.75:
+        col_cons = "#22c55e"
+    elif cons >= 0.50:
+        col_cons = "#eab308"
+    else:
+        col_cons = "#ef4444"
+    html = '<div class="box" style="border:2px solid #a855f7;background:#1a0f2a;">'
+    html += '<h2 style="color:#a855f7;">🧠 META-ENSEMBLE STACKING</h2>'
+    html += '<div class="ligne" style="margin-top:6px;"><span class="label" style="color:#a855f7;font-weight:bold;">Consensus global</span></div>'
+    html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + col_cons + ';font-size:16px;">' + str(cons) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Ecart-type predictions</span><span class="val">' + str(et) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Interpretation</span><span class="val">' + stacking["consensus_1"]["interpretation"] + '</span></div>'
+    html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#a855f7;font-weight:bold;">Poids adaptatifs</span></div>'
+    html += '<div class="ligne"><span class="label">Poisson</span><span class="val">' + str(poids["w_poisson"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Dixon-Coles</span><span class="val">' + str(poids["w_dc"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Monte Carlo</span><span class="val">' + str(poids["w_mc"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Bayesien</span><span class="val">' + str(poids["w_bayes"]) + '</span></div>'
+    html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#a855f7;font-weight:bold;">Predictions finales</span></div>'
+    html += '<div class="ligne"><span class="label">P(1)</span><span class="val">' + str(round(stacking["p1_final"] * 100, 2)) + '%</span></div>'
+    html += '<div class="ligne"><span class="label">P(X)</span><span class="val">' + str(round(stacking["px_final"] * 100, 2)) + '%</span></div>'
+    html += '<div class="ligne"><span class="label">P(2)</span><span class="val">' + str(round(stacking["p2_final"] * 100, 2)) + '%</span></div>'
+    pcs_col = "#4ade80" if pcs["pcs"] >= 0.70 else ("#eab308" if pcs["pcs"] >= 0.55 else "#ef4444")
+    html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#a855f7;font-weight:bold;">Prediction Confidence Score</span></div>'
+    html += '<div class="ligne"><span class="label">PCS</span><span class="val" style="color:' + pcs_col + ';font-size:16px;">' + str(pcs["pcs"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Label</span><span class="val" style="color:' + pcs_col + ';">' + pcs["label"] + '</span></div>'
     html += '</div>'
     return html
 
@@ -345,10 +368,14 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Probabilite</span><span class="val">' + str(round(p["p"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:#4ade80;">' + str(round(p["ev"] * 100, 2)) + '%</span></div>'
         if p.get("fiabilite_origine") is not None and p.get("ajustement_forensics"):
-            html += '<div class="ligne"><span class="label">Fiabilite (origine)</span><span class="val">' + str(p["fiabilite_origine"]) + '</span></div>'
+            html += '<div class="ligne"><span class="label">Fiab. origine</span><span class="val">' + str(p["fiabilite_origine"]) + '</span></div>'
             signe = "+" if p["ajustement_forensics"] > 0 else ""
             col_aj = "#4ade80" if p["ajustement_forensics"] > 0 else "#ef4444"
-            html += '<div class="ligne"><span class="label">Ajustement Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(p["ajustement_forensics"]) + '</span></div>'
+            html += '<div class="ligne"><span class="label">Ajust. Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(p["ajustement_forensics"]) + '</span></div>'
+        if p.get("ajustement_stacking") and p["ajustement_stacking"] != 0:
+            signe = "+" if p["ajustement_stacking"] > 0 else ""
+            col_aj = "#4ade80" if p["ajustement_stacking"] > 0 else "#ef4444"
+            html += '<div class="ligne"><span class="label">Ajust. Stacking</span><span class="val" style="color:' + col_aj + ';">' + signe + str(p["ajustement_stacking"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Fiabilite finale</span><span class="val">' + str(p["fiabilite"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Niveau</span><span class="val">' + p["niveau"] + '</span></div>'
         html += '<div class="ligne"><span class="label">Decision</span><span class="val">' + p["decision"] + '</span></div>'
@@ -362,11 +389,12 @@ async def analyser(request: Request):
         html += '<p style="color:#ccc;font-size:13px;">Aucune selection ne respecte les filtres V23.0.</p>'
         html += '</div>'
 
-    # === MARKET FORENSICS (commun foot + basket) ===
+    if r.get("stacking"):
+        html += bloc_stacking(r["stacking"])
+
     if r.get("forensics"):
         html += bloc_forensics(r["forensics"])
 
-    # === QFTE SIGNATURE BASKET ===
     if sport == "basketball" and r.get("signature"):
         sig = r["signature"]
         if sig["niveau_alerte"] == "ELEVEE":
@@ -391,22 +419,18 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Methode</span><span class="val">' + sig["methode"].upper() + '</span></div>'
         html += '<div class="ligne"><span class="label">Sigma ligue (' + ligue.upper() + ')</span><span class="val">' + str(sig["sigma_ligue"]) + '</span></div>'
         if sig["sigma_dom"] is not None:
-            html += '<div class="ligne"><span class="label">Sigma reel domicile</span><span class="val">' + str(sig["sigma_dom"]) + '</span></div>'
+            html += '<div class="ligne"><span class="label">Sigma reel dom.</span><span class="val">' + str(sig["sigma_dom"]) + '</span></div>'
         if sig["sigma_ext"] is not None:
-            html += '<div class="ligne"><span class="label">Sigma reel exterieur</span><span class="val">' + str(sig["sigma_ext"]) + '</span></div>'
+            html += '<div class="ligne"><span class="label">Sigma reel ext.</span><span class="val">' + str(sig["sigma_ext"]) + '</span></div>'
         if sig["sigma_match"] is not None:
             html += '<div class="ligne"><span class="label">Sigma match</span><span class="val">' + str(sig["sigma_match"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">⭐ Sigma final utilise</span><span class="val" style="color:#a855f7;">' + str(sig["sigma_final"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Sigma MT (0.70x)</span><span class="val">' + str(r["sigma_mt"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Sigma Quart (0.52x)</span><span class="val">' + str(r["sigma_quart"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">⭐ Sigma final</span><span class="val" style="color:#a855f7;">' + str(sig["sigma_final"]) + '</span></div>'
         html += '</div>'
 
         html += '<div class="box" style="background:#0f1a0f;border-color:#4ade80;">'
         html += '<h2 style="color:#4ade80;">📊 Indice de Consistance</h2>'
-        c_dom = sig["consistance_dom"]
-        c_ext = sig["consistance_ext"]
-        col_dom = couleur_cons(c_dom)
-        col_ext = couleur_cons(c_ext)
+        c_dom = sig["consistance_dom"]; c_ext = sig["consistance_ext"]
+        col_dom = couleur_cons(c_dom); col_ext = couleur_cons(c_ext)
         dom_txt = str(c_dom) if c_dom is not None else "N/A"
         ext_txt = str(c_ext) if c_ext is not None else "N/A"
         html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val" style="color:' + col_dom + ';">' + dom_txt + ' (' + sig["label_consistance_dom"] + ')</span></div>'
@@ -416,39 +440,37 @@ async def analyser(request: Request):
         html += '<div class="box" style="border-left:4px solid ' + couleur_alerte + ';background:#1a0f0f;padding-left:10px;">'
         html += '<h2 style="color:' + couleur_alerte + ';">⚠️ Alerte Volatilite</h2>'
         html += '<div class="ligne"><span class="label">Niveau</span><span class="val" style="color:' + couleur_alerte + ';">' + sig["niveau_alerte"] + '</span></div>'
-        html += '<div class="ligne"><span class="label">Ratio volatilite</span><span class="val">' + str(sig["ratio_volatilite"]) + 'x</span></div>'
+        html += '<div class="ligne"><span class="label">Ratio</span><span class="val">' + str(sig["ratio_volatilite"]) + 'x</span></div>'
         html += '<div class="ligne"><span class="label">Multiplicateur stake</span><span class="val">x' + str(sig["multiplicateur_stake"]) + '</span></div>'
         html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + sig["message_alerte"] + '</span></div>'
         html += '</div>'
 
-    # === QFTE SIGNATURE FOOT ===
     if sport == "football" and r.get("signature"):
         sigf = r["signature"]
         html += '<div class="box" style="border:2px solid #f59e0b;background:#1a150a;">'
         html += '<h2 style="color:#f59e0b;">🔬 QFTE SIGNATURE FOOT — Temporal Bayesian Dixon-Coles</h2>'
         html += '<div class="ligne"><span class="label">Methode</span><span class="val">' + sigf["methode"] + '</span></div>'
         html += '<div class="ligne"><span class="label">Prior ligue</span><span class="val">' + str(sigf["prior_ligue"]) + ' buts/match</span></div>'
-        html += '<div class="ligne"><span class="label">Lambda dom (brut)</span><span class="val">' + str(sigf["lambda_home_brut"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Lambda dom (bayesien)</span><span class="val" style="color:#f59e0b;">' + str(sigf["lambda_home_bayesien"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Lambda ext (brut)</span><span class="val">' + str(sigf["lambda_away_brut"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Lambda ext (bayesien)</span><span class="val" style="color:#f59e0b;">' + str(sigf["lambda_away_bayesien"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Lambda dom brut -> bayesien</span><span class="val">' + str(sigf["lambda_home_brut"]) + ' -> ' + str(sigf["lambda_home_bayesien"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Lambda ext brut -> bayesien</span><span class="val">' + str(sigf["lambda_away_brut"]) + ' -> ' + str(sigf["lambda_away_bayesien"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Rho Dixon-Coles</span><span class="val">' + str(sigf["rho"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Simulations Monte Carlo</span><span class="val">' + str(sigf["n_simulations"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Simulations MC</span><span class="val">' + str(sigf["n_simulations"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">BTTS Oui (DC)</span><span class="val">' + str(round(sigf["p_btts_oui_dc"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">BTTS Non (DC)</span><span class="val">' + str(round(sigf["p_btts_non_dc"] * 100, 2)) + '%</span></div>'
         html += '</div>'
 
         html += '<div class="box" style="background:#0f1a15;border-color:#4ade80;">'
-        html += '<h2 style="color:#4ade80;">📊 Probabilites 1X2 + IC 95% + Stabilite</h2>'
+        html += '<h2 style="color:#4ade80;">📊 IC 95% + Stabilite (Monte Carlo)</h2>'
         ic1 = sigf["ic_p1"]; icx = sigf["ic_px"]; ic2 = sigf["ic_p2"]
         s1 = sigf["stab_p1"]; sx = sigf["stab_px"]; s2 = sigf["stab_p2"]
         txt_ic1 = '[' + str(round(ic1[0] * 100, 1)) + '% - ' + str(round(ic1[1] * 100, 1)) + '%]' if ic1 and ic1[0] is not None else "N/A"
         txt_icx = '[' + str(round(icx[0] * 100, 1)) + '% - ' + str(round(icx[1] * 100, 1)) + '%]' if icx and icx[0] is not None else "N/A"
         txt_ic2 = '[' + str(round(ic2[0] * 100, 1)) + '% - ' + str(round(ic2[1] * 100, 1)) + '%]' if ic2 and ic2[0] is not None else "N/A"
-        html += '<div class="ligne"><span class="label">P(1) = ' + str(round(r["p1"] * 100, 2)) + '%</span><span class="val">' + txt_ic1 + ' | stab ' + str(s1) + '</span></div>'
-        html += '<div class="ligne"><span class="label">P(X) = ' + str(round(r["px"] * 100, 2)) + '%</span><span class="val">' + txt_icx + ' | stab ' + str(sx) + '</span></div>'
-        html += '<div class="ligne"><span class="label">P(2) = ' + str(round(r["p2"] * 100, 2)) + '%</span><span class="val">' + txt_ic2 + ' | stab ' + str(s2) + '</span></div>'
+        html += '<div class="ligne"><span class="label">P(1)</span><span class="val">' + txt_ic1 + ' | stab ' + str(s1) + '</span></div>'
+        html += '<div class="ligne"><span class="label">P(X)</span><span class="val">' + txt_icx + ' | stab ' + str(sx) + '</span></div>'
+        html += '<div class="ligne"><span class="label">P(2)</span><span class="val">' + txt_ic2 + ' | stab ' + str(s2) + '</span></div>'
         html += '</div>'
+
 
     if sport == "basketball":
         html += '<div class="box"><h2>Points attendus (mu)</h2>'
@@ -458,15 +480,6 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Total 1H</span><span class="val">' + str(r["mu_total_1h"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Total 2H</span><span class="val">' + str(r["mu_total_2h"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Ligue</span><span class="val">' + ligue.upper() + '</span></div>'
-        html += '</div>'
-
-        html += '<div class="box"><h2>Probabilites Moneyline</h2>'
-        html += '<div class="ligne"><span class="label">FT Domicile</span><span class="val">' + str(round(r["p_ml_home"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">FT Exterieur</span><span class="val">' + str(round(r["p_ml_away"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">1H Domicile</span><span class="val">' + str(round(r["p_1h_home"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">1H Exterieur</span><span class="val">' + str(round(r["p_1h_away"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">2H Domicile</span><span class="val">' + str(round(r["p_2h_home"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">2H Exterieur</span><span class="val">' + str(round(r["p_2h_away"] * 100, 2)) + '%</span></div>'
         html += '</div>'
 
         html += '<h2 style="text-align:left;">Detail - Moneyline</h2>'
@@ -536,7 +549,6 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Fatigue / B2B</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
         html += '</div>'
 
-
     else:
         html += '<div class="box"><h2>Buts attendus (lambda)</h2>'
         html += '<div class="ligne"><span class="label">' + eq_dom + ' (total)</span><span class="val">' + str(r["lambda_home"]) + '</span></div>'
@@ -547,7 +559,7 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">' + eq_ext + ' (2H)</span><span class="val">' + str(r["lambda_2h_away"]) + '</span></div>'
         html += '</div>'
 
-        html += '<div class="box"><h2>Probabilites 1X2 (temps plein)</h2>'
+        html += '<div class="box"><h2>Probabilites 1X2 (stackees)</h2>'
         html += '<div class="ligne"><span class="label">1</span><span class="val">' + str(round(r["p1"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">X</span><span class="val">' + str(round(r["px"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">2</span><span class="val">' + str(round(r["p2"] * 100, 2)) + '%</span></div>'
@@ -588,11 +600,14 @@ async def analyser(request: Request):
                 html += '<div class="ligne"><span class="label">P(effective)</span><span class="val">' + str(round(h["p"] * 100, 2)) + '%</span></div>'
                 html += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(h["cote"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:' + ec + ';">' + str(round(h["ev"] * 100, 2)) + '%</span></div>'
-                if h.get("fiabilite_origine") is not None and h.get("ajustement_forensics"):
-                    html += '<div class="ligne"><span class="label">Fiab. origine</span><span class="val">' + str(h["fiabilite_origine"]) + '</span></div>'
+                if h.get("ajustement_forensics") and h["ajustement_forensics"] != 0:
                     signe = "+" if h["ajustement_forensics"] > 0 else ""
                     col_aj = "#4ade80" if h["ajustement_forensics"] > 0 else "#ef4444"
                     html += '<div class="ligne"><span class="label">Ajust. Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_forensics"]) + '</span></div>'
+                if h.get("ajustement_stacking") and h["ajustement_stacking"] != 0:
+                    signe = "+" if h["ajustement_stacking"] > 0 else ""
+                    col_aj = "#4ade80" if h["ajustement_stacking"] > 0 else "#ef4444"
+                    html += '<div class="ligne"><span class="label">Ajust. Stacking</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_stacking"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(h["fiabilite"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
                 html += rh
