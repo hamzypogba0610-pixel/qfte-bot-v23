@@ -483,20 +483,20 @@ else:
         html += bloc_candidat(o)
 
 
-    html += '<div style="text-align:center;margin:24px 0;">'
-    html += '<button class="btn" onclick="sauvegarder()">Sauvegarder</button> '
-    html += '<a href="/" class="btn btn-secondary">Nouvelle analyse</a>'
-    html += '</div>'
+html += '<div style="text-align:center;margin:24px 0;">'
+html += '<button class="btn" onclick="sauvegarder()">Sauvegarder</button> '
+html += '<a href="/" class="btn btn-secondary">Nouvelle analyse</a>'
+html += '</div>'
 
-    html += '<script>const ANALYSE = ' + analyse_json + ';'
-    html += 'function sauvegarder(){try{let hist=JSON.parse(localStorage.getItem("qfte_analyses")||"[]");'
-    html += 'hist=hist.filter(a=>!(a.equipe_domicile===ANALYSE.equipe_domicile&&a.equipe_exterieur===ANALYSE.equipe_exterieur&&a.date_match===ANALYSE.date_match));'
-    html += 'hist.unshift(ANALYSE);if(hist.length>200)hist=hist.slice(0,200);'
-    html += 'localStorage.setItem("qfte_analyses",JSON.stringify(hist));alert("Analyse sauvegardee !");'
-    html += '}catch(e){alert("Erreur : "+e.message);}}</script>'
+html += '<script>const ANALYSE = ' + analyse_json + ';'
+html += 'function sauvegarder(){try{let hist=JSON.parse(localStorage.getItem("qfte_analyses")||"[]");'
+html += 'hist=hist.filter(a=>!(a.equipe_domicile===ANALYSE.equipe_domicile&&a.equipe_exterieur===ANALYSE.equipe_exterieur&&a.date_match===ANALYSE.date_match));'
+html += 'hist.unshift(ANALYSE);if(hist.length>200)hist=hist.slice(0,200);'
+html += 'localStorage.setItem("qfte_analyses",JSON.stringify(hist));alert("Analyse sauvegardee !");'
+html += '}catch(e){alert("Erreur : "+e.message);}}</script>'
 
-    html += '</body></html>'
-        return HTMLResponse(content=html)
+html += '</body></html>'
+return HTMLResponse(content=html)  R 
 
 
 @app.get("/historique", response_class=HTMLResponse)
