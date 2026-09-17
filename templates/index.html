@@ -3,36 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QFTE V23.0 — Bot d'analyse</title>
+    <title>QFTE V23.0 — Choix du sport</title>
     <style>
         * { box-sizing: border-box; }
-        body { font-family: -apple-system, Arial, sans-serif; background: #0f0f1a; color: #eee; margin: 0; padding: 16px; line-height: 1.4; }
-        h1 { color: #ffcc00; text-align: center; font-size: 22px; margin: 8px 0; }
-        h2 { color: #ffcc00; font-size: 15px; margin: 0; }
-        .subtitle { text-align: center; color: #999; font-size: 12px; margin-bottom: 20px; }
-        label { display: block; font-size: 13px; color: #bbb; margin: 10px 0 4px; }
-        input, select, textarea { width: 100%; padding: 10px; background: #1c1c2e; border: 1px solid #333; border-radius: 6px; color: #eee; font-size: 14px; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: #ffcc00; }
-        .row { display: flex; gap: 8px; }
-        .row > div { flex: 1; }
-        .sport-choice { display: flex; gap: 10px; margin-bottom: 10px; }
-        .sport-choice label { flex: 1; text-align: center; padding: 12px; background: #1c1c2e; border: 2px solid #333; border-radius: 8px; cursor: pointer; font-size: 15px; margin: 0; }
-        .sport-choice input { display: none; }
-        .sport-choice label:has(input:checked) { border-color: #ffcc00; background: #2a2a3e; }
-        .checkbox-line { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
-        .checkbox-line input { width: auto; }
-        button { width: 100%; padding: 16px; background: #ffcc00; color: #000; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-top: 24px; cursor: pointer; }
-        button:active { background: #e6b800; }
-        .section-box { background: #14141f; border: 1px solid #262636; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-        details { background: #14141f; border: 1px solid #262636; border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
-        details[open] { border-color: #ffcc00; }
-        summary { padding: 14px; cursor: pointer; font-size: 14px; font-weight: bold; color: #ffcc00; list-style: none; display: flex; justify-content: space-between; align-items: center; }
-        summary::after { content: "▾"; color: #999; font-size: 12px; }
-        details[open] summary::after { content: "▴"; }
-        summary::-webkit-details-marker { display: none; }
-        .details-content { padding: 0 14px 14px 14px; }
-        .hint { font-size: 11px; color: #888; margin: 4px 0 8px; }
-        .example { font-size: 11px; color: #4ade80; background: #0a1f0a; padding: 6px 8px; border-radius: 6px; margin-top: 6px; font-family: monospace; }
+        body {
+            font-family: -apple-system, Arial, sans-serif;
+            background: #0f0f1a;
+            color: #eee;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        h1 { color: #ffcc00; text-align: center; font-size: 28px; margin: 8px 0; }
+        .subtitle { text-align: center; color: #999; font-size: 13px; margin-bottom: 40px; }
+        .choix-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .choix-btn {
+            display: block;
+            padding: 30px 20px;
+            background: #14141f;
+            border: 2px solid #262636;
+            border-radius: 14px;
+            color: #fff;
+            text-decoration: none;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .choix-btn:active { transform: scale(0.98); }
+        .choix-btn:hover { border-color: #ffcc00; background: #1a1a2e; }
+        .choix-emoji { font-size: 48px; display: block; margin-bottom: 10px; }
+        .choix-titre { font-size: 22px; font-weight: bold; color: #ffcc00; margin-bottom: 6px; }
+        .choix-desc { font-size: 13px; color: #999; }
+        .version { margin-top: 40px; color: #666; font-size: 11px; text-align: center; }
+        .lien-historique {
+            margin-top: 20px;
+            color: #ffcc00;
+            text-decoration: none;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -40,268 +57,25 @@
     <h1>🦁 QFTE V23.0</h1>
     <p class="subtitle">Bot d'analyse — Standards Sharp-Money</p>
 
-    <form action="/analyser" method="post">
+    <div class="choix-container">
 
-        <div class="section-box">
-            <h2>🏟️ Sport</h2>
-            <div class="sport-choice" style="margin-top:10px;">
-                <label><input type="radio" name="sport" value="football" checked><span>⚽ Football</span></label>
-                <label><input type="radio" name="sport" value="basketball"><span>🏀 Basketball</span></label>
-            </div>
-        </div>
+        <a href="/football" class="choix-btn">
+            <span class="choix-emoji">⚽</span>
+            <div class="choix-titre">Football</div>
+            <div class="choix-desc">1X2 · Handicap · O/U · 2 mi-temps</div>
+        </a>
 
-        <div class="section-box">
-            <h2>🏆 Championnat (Basket uniquement)</h2>
-            <p class="hint">Impacte le calcul de l'écart-type (sigma) pour les analyses basket.</p>
-            <select name="ligue">
-                <option value="nba">🇺🇸 NBA (sigma 11.5)</option>
-                <option value="euroleague">🇪🇺 Euroleague (sigma 9.0)</option>
-                <option value="lnb">🇫🇷 LNB Pro A (sigma 9.5)</option>
-                <option value="acb">🇪🇸 ACB Espagne (sigma 9.0)</option>
-                <option value="bbl">🇩🇪 BBL Allemagne (sigma 9.5)</option>
-                <option value="lega">🇮🇹 Lega Basket Italie (sigma 9.5)</option>
-                <option value="ncaa">🎓 NCAA (sigma 10.0)</option>
-                <option value="fiba">🌍 FIBA (sigma 10.0)</option>
-                <option value="autre">🌐 Autre (sigma 10.5)</option>
-            </select>
-        </div>
+        <a href="/basketball" class="choix-btn">
+            <span class="choix-emoji">🏀</span>
+            <div class="choix-titre">Basketball</div>
+            <div class="choix-desc">ML · Spread · Total · Q1-Q4</div>
+        </a>
 
-        <div class="section-box">
-            <h2>📋 Match à analyser</h2>
-            <label>Compétition</label>
-            <input type="text" name="competition" placeholder="Ex : Ligue 1, NBA..." required>
-            <label>Équipe à domicile</label>
-            <input type="text" name="equipe_domicile" placeholder="Ex : PSG" required>
-            <label>Équipe à l'extérieur</label>
-            <input type="text" name="equipe_exterieur" placeholder="Ex : Marseille" required>
-            <label>Date du match</label>
-            <input type="date" name="date_match" required>
-        </div>
+    </div>
 
-        <div class="section-box" style="background:#0a1a2a;border-color:#1e3a5f;">
-            <h2 style="color:#4ea8ff;">💡 Format compact</h2>
-            <p style="font-size:12px;color:#aac;margin:8px 0 0 0;">
-            Scores : <b>BP-BC (HT_BP-HT_BC)</b><br>
-            Handicap : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b><br>
-            O/U : <b>Ligne/Cote_Over/Cote_Under</b><br>
-            ML Basket : <b>Cote_dom/Cote_ext</b>
-            </p>
-        </div>
+    <a href="/historique" class="lien-historique">📊 Voir l'historique</a>
 
-        <details open>
-            <summary>🏠 Domicile — 5 derniers à domicile</summary>
-            <div class="details-content">
-                <input type="text" name="home_contextuel" placeholder="Ex : 3-1 (1-0), 2-2, 4-0 (2-0), 1-1, 2-0">
-                <div class="hint">Foot : buts. Basket : points (ex: 105-98).</div>
-            </div>
-        </details>
-
-        <details>
-            <summary>🌍 Domicile — 5 derniers globaux</summary>
-            <div class="details-content">
-                <input type="text" name="home_global" placeholder="Ex : 2-1 (1-0), 3-1, 1-0 (0-0), 2-2, 4-1">
-            </div>
-        </details>
-
-        <details>
-            <summary>✈️ Extérieur — 5 derniers à l'extérieur</summary>
-            <div class="details-content">
-                <input type="text" name="away_contextuel" placeholder="Ex : 1-1 (0-1), 0-2, 2-1 (1-1), 1-3, 1-0">
-            </div>
-        </details>
-
-        <details>
-            <summary>🌍 Extérieur — 5 derniers globaux</summary>
-            <div class="details-content">
-                <input type="text" name="away_global" placeholder="Ex : 1-0 (0-0), 2-2, 0-1 (0-0), 1-1, 3-1">
-            </div>
-        </details>
-
-        <details>
-            <summary>⚔️ H2H — 3 dernières confrontations</summary>
-            <div class="details-content">
-                <input type="text" name="h2h" placeholder="Ex : 2-1, 1-1, 0-2">
-            </div>
-        </details>
-
-        <details>
-            <summary>🏆 Classement</summary>
-            <div class="details-content">
-                <div class="row">
-                    <div>
-                        <label>Position domicile</label>
-                        <input type="number" name="pos_dom" min="1" placeholder="Ex : 1">
-                    </div>
-                    <div>
-                        <label>Position extérieur</label>
-                        <input type="number" name="pos_ext" min="1" placeholder="Ex : 20">
-                    </div>
-                </div>
-                <label>Nombre total d'équipes</label>
-                <input type="number" name="total_equipes" min="2" value="20">
-            </div>
-        </details>
-
-        <details>
-            <summary>📊 Stats Avancées Basket (optionnel)</summary>
-            <div class="details-content">
-                <p class="hint">Si tu connais ces stats, elles améliorent la précision du modèle. Sinon, laisse vide.</p>
-                <label>Pace — Domicile (possessions / 48 min)</label>
-                <input type="number" step="0.1" name="pace_dom" placeholder="NBA: ~100 | Euroleague: ~78">
-                <label>OffRtg — Domicile (points / 100 possessions)</label>
-                <input type="number" step="0.1" name="offrtg_dom" placeholder="Ex : 118.5">
-                <label>DefRtg — Domicile (points concédés / 100 possessions)</label>
-                <input type="number" step="0.1" name="defrtg_dom" placeholder="Ex : 110.2">
-                <label>Pace — Extérieur</label>
-                <input type="number" step="0.1" name="pace_ext" placeholder="Ex : 99.5">
-                <label>OffRtg — Extérieur</label>
-                <input type="number" step="0.1" name="offrtg_ext" placeholder="Ex : 115.0">
-                <label>DefRtg — Extérieur</label>
-                <input type="number" step="0.1" name="defrtg_ext" placeholder="Ex : 112.0">
-            </div>
-            </details>
-
-        
-        <details>
-            <summary>📈 Cotes 1X2 (Foot) / Moneyline FT (Basket)</summary>
-            <div class="details-content">
-                <p class="hint">Foot : 1 / X / 2. Basket : Moneyline Domicile/Extérieur (pas de X).</p>
-                <label>Ouverture — Domicile / Nul / Extérieur</label>
-                <div class="row">
-                    <div><input type="number" step="0.01" name="open_1" placeholder="1"></div>
-                    <div><input type="number" step="0.01" name="open_x" placeholder="X"></div>
-                    <div><input type="number" step="0.01" name="open_2" placeholder="2"></div>
-                </div>
-                <label>Actuelles — Domicile / Nul / Extérieur</label>
-                <div class="row">
-                    <div><input type="number" step="0.01" name="curr_1" placeholder="1"></div>
-                    <div><input type="number" step="0.01" name="curr_x" placeholder="X"></div>
-                    <div><input type="number" step="0.01" name="curr_2" placeholder="2"></div>
-                </div>
-                <label>🏀 Moneyline FT (Basket uniquement)</label>
-                <input type="text" name="ml_ft" placeholder="Ex : 1.55/2.30">
-                <div class="example">Format : Cote_domicile/Cote_extérieur</div>
-            </div>
-        </details>
-
-        <details>
-            <summary>🕐 Mode 2 mi-temps (Foot)</summary>
-            <div class="details-content">
-                <p class="hint">Cotes 1X2 à la mi-temps (HT) et en 2ème mi-temps (2H).</p>
-                <label>1X2 à la mi-temps (HT)</label>
-                <div class="row">
-                    <div><input type="number" step="0.01" name="ht_1" placeholder="HT 1"></div>
-                    <div><input type="number" step="0.01" name="ht_x" placeholder="HT X"></div>
-                    <div><input type="number" step="0.01" name="ht_2" placeholder="HT 2"></div>
-                </div>
-                <label>1X2 en 2ème mi-temps (2H)</label>
-                <div class="row">
-                    <div><input type="number" step="0.01" name="h2_1" placeholder="2H 1"></div>
-                    <div><input type="number" step="0.01" name="h2_x" placeholder="2H X"></div>
-                    <div><input type="number" step="0.01" name="h2_2" placeholder="2H 2"></div>
-                </div>
-            </div>
-        </details>
-
-        <details>
-            <summary>🕐 Mi-temps Basket (1H / 2H)</summary>
-            <div class="details-content">
-                <p class="hint">Basket uniquement.</p>
-                <label>Moneyline 1ère mi-temps (1H)</label>
-                <input type="text" name="ml_1h" placeholder="Ex : 1.75/2.00">
-                <div class="example">Format : Cote_dom/Cote_ext</div>
-                <label>Total Points 1ère mi-temps (1H)</label>
-                <input type="text" name="total_1h" placeholder="Ex : 110.5/1.90/1.90">
-                <div class="example">Format : Ligne/Cote_Over/Cote_Under</div>
-                <label>Moneyline 2ème mi-temps (2H)</label>
-                <input type="text" name="ml_2h" placeholder="Ex : 1.80/1.95">
-                <div class="example">Format : Cote_dom/Cote_ext</div>
-                <label>Total Points 2ème mi-temps (2H)</label>
-                <input type="text" name="total_2h" placeholder="Ex : 105.5/1.85/1.95">
-                <div class="example">Format : Ligne/Cote_Over/Cote_Under</div>
-            </div>
-        </details>
-
-        <details>
-            <summary>🕐 Quarts-temps Basket (Q1 / Q2 / Q3 / Q4)</summary>
-            <div class="details-content">
-                <p class="hint">Basket uniquement. Format : <b>Total=Ligne/Over/Under | ML=Dom/Ext</b></p>
-                <label>Q1 — 1er quart-temps</label>
-                <input type="text" name="q1" placeholder="Ex : Total=55.5/1.85/1.95 | ML=1.80/2.05">
-                <div class="example">Exemple : Total=55.5/1.85/1.95 | ML=1.80/2.05</div>
-                <label>Q2 — 2ème quart-temps</label>
-                <input type="text" name="q2" placeholder="Ex : Total=53.5/1.90/1.90 | ML=1.85/2.00">
-                <div class="example">Exemple : Total=53.5/1.90/1.90 | ML=1.85/2.00</div>
-                <label>Q3 — 3ème quart-temps</label>
-                <input type="text" name="q3" placeholder="Ex : Total=55.0/1.85/1.95 | ML=1.75/2.10">
-                <div class="example">Exemple : Total=55.0/1.85/1.95 | ML=1.75/2.10</div>
-                <label>Q4 — 4ème quart-temps</label>
-                <input type="text" name="q4" placeholder="Ex : Total=53.5/1.90/1.90 | ML=1.80/2.05">
-                <div class="example">Exemple : Total=53.5/1.90/1.90 | ML=1.80/2.05</div>
-            </div>
-        </details>
-
-        <details>
-            <summary>🎯 Handicap (Foot) / Spread (Basket)</summary>
-            <div class="details-content">
-                <p class="hint">Format : <b>Hcp_dom/Cote_dom/Hcp_ext/Cote_ext</b></p>
-                <input type="text" name="handicap" placeholder="Ex : -0.5/1.90/+0.5/1.95, -1.5/2.10/+1.5/1.75">
-                <div class="example">Foot : -0.5/1.90/+0.5/1.95 | Basket : -5.5/1.90/+5.5/1.95</div>
-            </div>
-        </details>
-
-        <details>
-            <summary>⚽ Over / Under (Foot) / Total Points FT (Basket)</summary>
-            <div class="details-content">
-                <p class="hint">Format : <b>Ligne/Cote_Over/Cote_Under</b></p>
-                <input type="text" name="ou_buts" placeholder="Foot : 2.5/1.85/1.95 | Basket : 220.5/1.90/1.90">
-                <div class="example">Foot : 1.5/3.20/1.35, 2.5/1.85/1.95 | Basket : 210.5/1.85/1.95, 220.5/1.90/1.90</div>
-            </div>
-        </details>
-
-        <details>
-            <summary>🎚️ Contexte</summary>
-            <div class="details-content">
-                <label>Météo</label>
-                <select name="meteo">
-                    <option value="normale">Normale</option>
-                    <option value="pluie">Pluie</option>
-                    <option value="neige">Neige</option>
-                    <option value="chaleur_extreme">Chaleur extrême</option>
-                    <option value="vent_fort">Vent fort</option>
-                </select>
-                <label>Enjeu du match</label>
-                <select name="enjeu">
-                    <option value="normal">Normal</option>
-                    <option value="derby">Derby / Rivalité</option>
-                    <option value="finale">Finale / Match décisif</option>
-                    <option value="fin_saison">Fin de saison</option>
-                    <option value="relegation">Lutte pour le maintien</option>
-                </select>
-                <div class="checkbox-line">
-                    <input type="checkbox" name="blessures_domicile" id="bless_dom">
-                    <label for="bless_dom" style="margin:0;">Blessures — domicile</label>
-                </div>
-                <div class="checkbox-line">
-                    <input type="checkbox" name="blessures_exterieur" id="bless_ext">
-                    <label for="bless_ext" style="margin:0;">Blessures — extérieur</label>
-                </div>
-                <div class="checkbox-line">
-                    <input type="checkbox" name="fatigue_domicile" id="fat_dom">
-                    <label for="fat_dom" style="margin:0;">😴 Back-to-back — domicile</label>
-                </div>
-                <div class="checkbox-line">
-                    <input type="checkbox" name="fatigue_exterieur" id="fat_ext">
-                    <label for="fat_ext" style="margin:0;">😴 Back-to-back — extérieur</label>
-                </div>
-                <label>Notes libres</label>
-                <textarea name="notes" rows="2"></textarea>
-            </div>
-        </details>
-
-        <button type="submit">🔍 Analyser le match</button>
-
-    </form>
+    <p class="version">Version 23.0 — 2026</p>
 
 </body>
-    </html>
+</html>
