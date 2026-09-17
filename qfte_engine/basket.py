@@ -24,6 +24,7 @@ from qfte_engine.cross_market import (
     analyser_cross_market,
     ajuster_fiabilite_consistency,
 )
+from qfte_engine.regime import analyser_regime
 
 
 SIGMA_PAR_LIGUE = {
@@ -627,6 +628,7 @@ def analyser_match_basket(
 
     # Forensics
     forensics = analyser_market_forensics(open_1, 0, open_2, curr_1, 0, curr_2)
+    regime = analyser_regime(forensics)
     forensics_sharpe = 0.0
     if forensics and forensics.get("disponible"):
         forensics_sharpe = forensics["sharpe_signal"]["sharpe_signal"]
@@ -918,6 +920,7 @@ def analyser_match_basket(
         "sigma_quart": sigma_quart,
         "signature": signature,
         "forensics": forensics,
+        "regime": regime,
         "stacking": stacking,
         "cross_market": cross_market,
         "details": details,
