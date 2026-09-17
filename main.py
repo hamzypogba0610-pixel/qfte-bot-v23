@@ -496,7 +496,7 @@ else:
     html += '}catch(e){alert("Erreur : "+e.message);}}</script>'
 
     html += '</body></html>'
-    return HTMLResponse(content=html)
+        return HTMLResponse(content=html)
 
 
 @app.get("/historique", response_class=HTMLResponse)
