@@ -136,6 +136,7 @@ def fopt(form, k):
         return None
 
 
+
 def bloc_candidat(c):
     ec = "#4ade80" if c["ev"] >= 0 else "#ef4444"
     if c["passe_filtres"]:
@@ -195,11 +196,14 @@ def bloc_forensics(forensics):
         if not m:
             continue
         if m["delta"] <= -0.05:
-            col = "#4ade80"; emoji = "🟢"
+            col = "#4ade80"
+            emoji = "🟢"
         elif m["delta"] >= 0.05:
-            col = "#ef4444"; emoji = "🔴"
+            col = "#ef4444"
+            emoji = "🔴"
         else:
-            col = "#eab308"; emoji = "🟡"
+            col = "#eab308"
+            emoji = "🟡"
         html += '<div class="ligne"><span class="label">' + k + ' : ' + str(m["open"]) + ' -> ' + str(m["curr"]) + '</span><span class="val" style="color:' + col + ';">' + emoji + ' ' + str(m["delta_pct"]) + '% (' + m["label"] + ')</span></div>'
     html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Pattern detecte</span></div>'
     html += '<div class="ligne"><span class="label">' + pattern["pattern"] + '</span><span class="val">' + pattern["description"] + '</span></div>'
@@ -221,6 +225,7 @@ def bloc_forensics(forensics):
     html += '</div>'
     html += '</div>'
     return html
+
 
 
 def bloc_stacking(stacking):
@@ -279,6 +284,7 @@ def bloc_cross_market(cm):
     html = '<div class="box" style="border:2px solid #14b8a6;background:#0a1a1a;">'
     html += '<h2 style="color:#14b8a6;">🔀 CROSS-MARKET CORRELATION</h2>'
     html += '<div class="ligne"><span class="label">Incoherences detectees</span><span class="val">' + str(cm["nb_incoherences"]) + '</span></div>'
+
     if incoherences:
         for inc in incoherences:
             niv = inc.get("niveau", "?")
@@ -299,7 +305,7 @@ def bloc_cross_market(cm):
             html += '<div class="ligne"><span class="label" style="font-size:12px;color:#aaa;">' + inc.get("interpretation", "") + '</span></div>'
             html += '</div>'
     else:
-        html += '<p style="color:#888;font-size:13px;margin-top:8px;">Pas d\'incoherence majeure detectee.</p>'
+        html += '<p style="color:#888;font-size:13px;margin-top:8px;">Pas d incoherence majeure detectee.</p>'
 
     if arbitrages:
         html += '<h2 style="color:#22c55e;margin-top:12px;">🔥 ARBITRAGES DETECTES</h2>'
@@ -327,6 +333,16 @@ def bloc_cross_market(cm):
 @app.get("/", response_class=HTMLResponse)
 async def accueil(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "titre": "QFTE V23.0"})
+
+
+@app.get("/football", response_class=HTMLResponse)
+async def page_football(request: Request):
+    return templates.TemplateResponse("football.html", {"request": request, "titre": "QFTE Football"})
+
+
+@app.get("/basketball", response_class=HTMLResponse)
+async def page_basketball(request: Request):
+    return templates.TemplateResponse("basketball.html", {"request": request, "titre": "QFTE Basketball"})
 
 
 
@@ -413,19 +429,23 @@ async def analyser(request: Request):
             ligue
         )
 
-    analyse_json = json.dumps({
+    analyse_dict = {
         "date_analyse": datetime.now().isoformat(timespec="seconds"),
-        "sport": sport, "competition": competition,
-        "equipe_domicile": eq_dom, "equipe_exterieur": eq_ext,
-        "date_match": date_match, "resultats": r,
-    }, ensure_ascii=False).replace("</", "<\\/")
+        "sport": sport,
+        "competition": competition,
+        "equipe_domicile": eq_dom,
+        "equipe_exterieur": eq_ext,
+        "date_match": date_match,
+        "resultats": r,
+    }
+    analyse_json = json.dumps(analyse_dict, ensure_ascii=False)
+    analyse_json = analyse_json.replace("</", "<\\/")
 
     html = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>QFTE</title><style>' + STYLE + '</style></head><body>'
-    html += '<div style="text-align:center;margin-bottom:12px;"><a href="/historique" class="btn btn-secondary">Historique</a></div>'
+    html += '<div style="text-align:center;margin-bottom:12px;"><a href="/historique" class="btn btn-secondary">Historique</a> <a href="/" class="btn btn-secondary">Accueil</a></div>'
     html += '<h1>QFTE V23.0 - Analyse</h1>'
     html += '<p style="text-align:center;color:#999;font-size:12px;">' + eq_dom + ' vs ' + eq_ext + ' - ' + competition + ' (' + sport + ')</p>'
 
-    # === PARI RETENU ===
     if r["pari_retenu"]:
         p = r["pari_retenu"]
         html += '<div class="box" style="border:2px solid #4ade80;">'
@@ -470,6 +490,7 @@ async def analyser(request: Request):
     if r.get("forensics"):
         html += bloc_forensics(r["forensics"])
 
+
     if sport == "basketball" and r.get("signature"):
         sig = r["signature"]
         if sig["niveau_alerte"] == "ELEVEE":
@@ -504,8 +525,10 @@ async def analyser(request: Request):
 
         html += '<div class="box" style="background:#0f1a0f;border-color:#4ade80;">'
         html += '<h2 style="color:#4ade80;">📊 Indice de Consistance</h2>'
-        c_dom = sig["consistance_dom"]; c_ext = sig["consistance_ext"]
-        col_dom = couleur_cons(c_dom); col_ext = couleur_cons(c_ext)
+        c_dom = sig["consistance_dom"]
+        c_ext = sig["consistance_ext"]
+        col_dom = couleur_cons(c_dom)
+        col_ext = couleur_cons(c_ext)
         dom_txt = str(c_dom) if c_dom is not None else "N/A"
         ext_txt = str(c_ext) if c_ext is not None else "N/A"
         html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val" style="color:' + col_dom + ';">' + dom_txt + ' (' + sig["label_consistance_dom"] + ')</span></div>'
@@ -536,16 +559,28 @@ async def analyser(request: Request):
 
         html += '<div class="box" style="background:#0f1a15;border-color:#4ade80;">'
         html += '<h2 style="color:#4ade80;">📊 IC 95% + Stabilite (Monte Carlo)</h2>'
-        ic1 = sigf["ic_p1"]; icx = sigf["ic_px"]; ic2 = sigf["ic_p2"]
-        s1 = sigf["stab_p1"]; sx = sigf["stab_px"]; s2 = sigf["stab_p2"]
-        txt_ic1 = '[' + str(round(ic1[0] * 100, 1)) + '% - ' + str(round(ic1[1] * 100, 1)) + '%]' if ic1 and ic1[0] is not None else "N/A"
-        txt_icx = '[' + str(round(icx[0] * 100, 1)) + '% - ' + str(round(icx[1] * 100, 1)) + '%]' if icx and icx[0] is not None else "N/A"
-        txt_ic2 = '[' + str(round(ic2[0] * 100, 1)) + '% - ' + str(round(ic2[1] * 100, 1)) + '%]' if ic2 and ic2[0] is not None else "N/A"
+        ic1 = sigf["ic_p1"]
+        icx = sigf["ic_px"]
+        ic2 = sigf["ic_p2"]
+        s1 = sigf["stab_p1"]
+        sx = sigf["stab_px"]
+        s2 = sigf["stab_p2"]
+        if ic1 and ic1[0] is not None:
+            txt_ic1 = '[' + str(round(ic1[0] * 100, 1)) + '% - ' + str(round(ic1[1] * 100, 1)) + '%]'
+        else:
+            txt_ic1 = "N/A"
+        if icx and icx[0] is not None:
+            txt_icx = '[' + str(round(icx[0] * 100, 1)) + '% - ' + str(round(icx[1] * 100, 1)) + '%]'
+        else:
+            txt_icx = "N/A"
+        if ic2 and ic2[0] is not None:
+            txt_ic2 = '[' + str(round(ic2[0] * 100, 1)) + '% - ' + str(round(ic2[1] * 100, 1)) + '%]'
+        else:
+            txt_ic2 = "N/A"
         html += '<div class="ligne"><span class="label">P(1)</span><span class="val">' + txt_ic1 + ' | stab ' + str(s1) + '</span></div>'
         html += '<div class="ligne"><span class="label">P(X)</span><span class="val">' + txt_icx + ' | stab ' + str(sx) + '</span></div>'
         html += '<div class="ligne"><span class="label">P(2)</span><span class="val">' + txt_ic2 + ' | stab ' + str(s2) + '</span></div>'
         html += '</div>'
-
 
     if sport == "basketball":
         html += '<div class="box"><h2>Points attendus (mu)</h2>'
@@ -666,31 +701,7 @@ async def analyser(request: Request):
         html += '<h2 style="text-align:left;">Detail - Handicap</h2>'
         if r["handicap_resultats"]:
             for h in r["handicap_resultats"]:
-                ec = "#4ade80" if h["ev"] >= 0 else "#ef4444"
-                st = "PASSE" if h["passe_filtres"] else "REJETE"
-                rh = "" if h["passe_filtres"] else "".join(['<div class="ligne"><span class="label" style="color:#ef4444;font-size:12px;">-> ' + x + '</span></div>' for x in h["raisons_rejet"]])
-                html += '<div class="box">'
-                html += '<div class="ligne"><span class="label">Handicap</span><span class="val">' + str(h["hcp"]) + ' (' + h["cible"] + ')</span></div>'
-                html += '<div class="ligne"><span class="label">P(gain) / P(remb.)</span><span class="val">' + str(round(h["p_gain"] * 100, 1)) + '% / ' + str(round(h["p_remb"] * 100, 1)) + '%</span></div>'
-                html += '<div class="ligne"><span class="label">P(effective)</span><span class="val">' + str(round(h["p"] * 100, 2)) + '%</span></div>'
-                html += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(h["cote"]) + '</span></div>'
-                html += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:' + ec + ';">' + str(round(h["ev"] * 100, 2)) + '%</span></div>'
-                if h.get("ajustement_forensics") and h["ajustement_forensics"] != 0:
-                    signe = "+" if h["ajustement_forensics"] > 0 else ""
-                    col_aj = "#4ade80" if h["ajustement_forensics"] > 0 else "#ef4444"
-                    html += '<div class="ligne"><span class="label">Ajust. Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_forensics"]) + '</span></div>'
-                if h.get("ajustement_stacking") and h["ajustement_stacking"] != 0:
-                    signe = "+" if h["ajustement_stacking"] > 0 else ""
-                    col_aj = "#4ade80" if h["ajustement_stacking"] > 0 else "#ef4444"
-                    html += '<div class="ligne"><span class="label">Ajust. Stacking</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_stacking"]) + '</span></div>'
-                if h.get("ajustement_consistency") and h["ajustement_consistency"] != 0:
-                    signe = "+" if h["ajustement_consistency"] > 0 else ""
-                    col_aj = "#4ade80" if h["ajustement_consistency"] > 0 else "#ef4444"
-                    html += '<div class="ligne"><span class="label">Ajust. Cross-Market</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_consistency"]) + '</span></div>'
-                html += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(h["fiabilite"]) + '</span></div>'
-                html += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
-                html += rh
-                html += '</div>'
+                html += bloc_candidat(h)
         else:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun handicap saisi.</p></div>'
 
@@ -741,7 +752,7 @@ async def analyser(request: Request):
     html += '}catch(e){alert("Erreur : "+e.message);}}</script>'
 
     html += '</body></html>'
-    return HTMLResponse(content=html)
+        return HTMLResponse(content=html)
 
 
 @app.get("/historique", response_class=HTMLResponse)
@@ -749,7 +760,7 @@ async def historique(request: Request):
     h = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Historique QFTE</title><style>' + STYLE + '</style></head><body>'
     h += '<h1>Historique QFTE V23.0</h1>'
     h += '<div style="text-align:center;margin-bottom:16px;">'
-    h += '<a href="/" class="btn btn-secondary">Nouvelle analyse</a> '
+    h += '<a href="/" class="btn btn-secondary">Accueil</a> '
     h += '<button class="btn" onclick="exporter()">Exporter JSON</button> '
     h += '<button class="btn btn-danger" onclick="vider()">Vider</button>'
     h += '</div>'
