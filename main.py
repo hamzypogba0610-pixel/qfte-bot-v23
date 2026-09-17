@@ -157,11 +157,82 @@ def bloc_candidat(c):
         out += '<div class="ligne"><span class="label">Stabilite</span><span class="val">' + str(c["stabilite"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(c["cote"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:' + ec + ';">' + str(round(c["ev"] * 100, 2)) + '%</span></div>'
-    out += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(c["fiabilite"]) + '</span></div>'
+    if c.get("fiabilite_origine") is not None and c.get("ajustement_forensics") is not None:
+        if c["ajustement_forensics"] != 0:
+            signe = "+" if c["ajustement_forensics"] > 0 else ""
+            col_aj = "#4ade80" if c["ajustement_forensics"] > 0 else "#ef4444"
+            out += '<div class="ligne"><span class="label">Fiabilite (origine)</span><span class="val">' + str(c["fiabilite_origine"]) + '</span></div>'
+            out += '<div class="ligne"><span class="label">Ajustement Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(c["ajustement_forensics"]) + '</span></div>'
+    out += '<div class="ligne"><span class="label">Fiabilite finale</span><span class="val">' + str(c["fiabilite"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
     out += rh
     out += '</div>'
     return out
+
+
+def bloc_forensics(forensics):
+    """Genere le bloc HTML MARKET FORENSICS."""
+    if not forensics or not forensics.get("disponible"):
+        return '<div class="box" style="border:2px solid #64748b;background:#0f0f1a;"><h2 style="color:#64748b;">🔎 MARKET FORENSICS</h2><p style="color:#666;font-size:13px;">Donnees insuffisantes (cotes ouverture ou actuelles manquantes).</p></div>'
+
+    mouvements = forensics["mouvements"]
+    pattern = forensics["pattern"]
+    clv = forensics["clv"]
+    sharp = forensics["sharp_money"]
+    eff = forensics["efficience"]
+    sharpe = forensics["sharpe_signal"]
+
+    html = '<div class="box" style="border:2px solid #0ea5e9;background:#0a1620;">'
+    html += '<h2 style="color:#0ea5e9;">🔎 MARKET FORENSICS — Analyse du mouvement</h2>'
+
+    # Mouvements
+    html += '<div class="ligne" style="margin-top:6px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Mouvement des cotes (ouverture -> actuelle)</span></div>'
+    for k in ["1", "X", "2"]:
+        m = mouvements.get(k)
+        if not m:
+            continue
+        if m["delta"] <= -0.05:
+            col = "#4ade80"
+            emoji = "🟢"
+        elif m["delta"] >= 0.05:
+            col = "#ef4444"
+            emoji = "🔴"
+        else:
+            col = "#eab308"
+            emoji = "🟡"
+        html += '<div class="ligne"><span class="label">' + k + ' : ' + str(m["open"]) + ' -> ' + str(m["curr"]) + '</span><span class="val" style="color:' + col + ';">' + emoji + ' ' + str(m["delta_pct"]) + '% (' + m["label"] + ')</span></div>'
+
+    # Pattern
+    html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Pattern detecte</span></div>'
+    html += '<div class="ligne"><span class="label">' + pattern["pattern"] + '</span><span class="val">' + pattern["description"] + '</span></div>'
+
+    # CLV
+    html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">CLV predictif</span></div>'
+    clv_col = "#4ade80" if clv["clv_predictif"] > 0.02 else ("#ef4444" if clv["clv_predictif"] < -0.02 else "#eab308")
+    html += '<div class="ligne"><span class="label">CLV global</span><span class="val" style="color:' + clv_col + ';">' + str(round(clv["clv_predictif"] * 100, 2)) + '%</span></div>'
+    html += '<div class="ligne"><span class="label" style="font-size:12px;color:#888;">' + clv["interpretation"] + '</span></div>'
+
+    # Sharp Money
+    html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Sharp Money Score</span></div>'
+    sm_col = "#4ade80" if sharp["score"] > 0.2 else ("#ef4444" if sharp["score"] < -0.2 else "#eab308")
+    html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + sm_col + ';">' + str(sharp["score"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Label</span><span class="val" style="color:' + sm_col + ';">' + sharp["label"] + '</span></div>'
+
+    # Efficience
+    html += '<div class="ligne" style="margin-top:10px;"><span class="label" style="color:#0ea5e9;font-weight:bold;">Efficience marche</span></div>'
+    html += '<div class="ligne"><span class="label">Score</span><span class="val">' + str(eff["efficience"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Label</span><span class="val">' + eff["label"] + '</span></div>'
+
+    # Sharpe Signal
+    html += '<div class="box" style="margin-top:12px;background:#0a0a14;border-color:' + sharpe["couleur"] + ';">'
+    html += '<h2 style="color:' + sharpe["couleur"] + ';">⭐ SHARPE SIGNAL</h2>'
+    html += '<div class="ligne"><span class="label">Score</span><span class="val" style="color:' + sharpe["couleur"] + ';font-size:18px;">' + str(sharpe["sharpe_signal"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Label</span><span class="val" style="color:' + sharpe["couleur"] + ';">' + sharpe["label"] + '</span></div>'
+    html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + sharpe["interpretation"] + '</span></div>'
+    html += '</div>'
+
+    html += '</div>'
+    return html
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -241,7 +312,8 @@ async def analyser(request: Request):
             ligue,
             pace_dom, offrtg_dom, defrtg_dom,
             pace_ext, offrtg_ext, defrtg_ext,
-            q1, q2, q3, q4
+            q1, q2, q3, q4,
+            o1, o2, c1, c2
         )
     else:
         r = analyser_match_football(
@@ -272,7 +344,12 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(p["cote"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Probabilite</span><span class="val">' + str(round(p["p"] * 100, 2)) + '%</span></div>'
         html += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:#4ade80;">' + str(round(p["ev"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(p["fiabilite"]) + '</span></div>'
+        if p.get("fiabilite_origine") is not None and p.get("ajustement_forensics"):
+            html += '<div class="ligne"><span class="label">Fiabilite (origine)</span><span class="val">' + str(p["fiabilite_origine"]) + '</span></div>'
+            signe = "+" if p["ajustement_forensics"] > 0 else ""
+            col_aj = "#4ade80" if p["ajustement_forensics"] > 0 else "#ef4444"
+            html += '<div class="ligne"><span class="label">Ajustement Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(p["ajustement_forensics"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Fiabilite finale</span><span class="val">' + str(p["fiabilite"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">Niveau</span><span class="val">' + p["niveau"] + '</span></div>'
         html += '<div class="ligne"><span class="label">Decision</span><span class="val">' + p["decision"] + '</span></div>'
         if p.get("stake_origine"):
@@ -285,6 +362,11 @@ async def analyser(request: Request):
         html += '<p style="color:#ccc;font-size:13px;">Aucune selection ne respecte les filtres V23.0.</p>'
         html += '</div>'
 
+    # === MARKET FORENSICS (commun foot + basket) ===
+    if r.get("forensics"):
+        html += bloc_forensics(r["forensics"])
+
+    # === QFTE SIGNATURE BASKET ===
     if sport == "basketball" and r.get("signature"):
         sig = r["signature"]
         if sig["niveau_alerte"] == "ELEVEE":
@@ -339,6 +421,7 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + sig["message_alerte"] + '</span></div>'
         html += '</div>'
 
+    # === QFTE SIGNATURE FOOT ===
     if sport == "football" and r.get("signature"):
         sigf = r["signature"]
         html += '<div class="box" style="border:2px solid #f59e0b;background:#1a150a;">'
@@ -505,6 +588,11 @@ async def analyser(request: Request):
                 html += '<div class="ligne"><span class="label">P(effective)</span><span class="val">' + str(round(h["p"] * 100, 2)) + '%</span></div>'
                 html += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(h["cote"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:' + ec + ';">' + str(round(h["ev"] * 100, 2)) + '%</span></div>'
+                if h.get("fiabilite_origine") is not None and h.get("ajustement_forensics"):
+                    html += '<div class="ligne"><span class="label">Fiab. origine</span><span class="val">' + str(h["fiabilite_origine"]) + '</span></div>'
+                    signe = "+" if h["ajustement_forensics"] > 0 else ""
+                    col_aj = "#4ade80" if h["ajustement_forensics"] > 0 else "#ef4444"
+                    html += '<div class="ligne"><span class="label">Ajust. Forensics</span><span class="val" style="color:' + col_aj + ';">' + signe + str(h["ajustement_forensics"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(h["fiabilite"]) + '</span></div>'
                 html += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
                 html += rh
