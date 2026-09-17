@@ -162,6 +162,24 @@ def bloc_candidat(c):
 
 def bloc_visuel(r, sport):
     html = ''
+    rg = r.get("regime")
+if rg and rg.get("disponible"):
+    col_reg = "#4ade80"
+    if rg["regime"] == "CHAOS":
+        col_reg = "#ef4444"
+    elif rg["regime"] == "VOLATIL":
+        col_reg = "#eab308"
+    elif rg["regime"] == "TENDANCE":
+        col_reg = "#22c55e"
+    html += '<div style="border:2px solid #f97316;background:#1a0f00;padding:10px;margin-top:12px;border-radius:8px;">'
+    html += '<h3 style="color:#f97316;margin-top:0;">📊 MARKET REGIME</h3>'
+    html += '<p>Regime : <b style="color:' + col_reg + ';">' + rg["regime"] + '</b></p>'
+    html += '<p>Volatilite : ' + str(rg["volatilite"]) + ' | Amplitude : ' + str(rg["amplitude"]) + '</p>'
+    html += '<p>Directionnalite : ' + str(rg["directionnalite"]) + '</p>'
+    html += '<p>Seuils : fiab ' + str(rg["seuil_fiabilite"]) + ' | value ' + str(round(rg["seuil_value"] * 100, 1)) + '% | conf ' + str(rg["seuil_confiance"]) + '</p>'
+    html += '<p>Multiplicateur stake : x' + str(rg["multiplicateur_stake"]) + '</p>'
+    html += '<p style="font-size:12px;color:#aaa;">' + rg["description"] + '</p>'
+    html += '</div>'
 
     f = r.get("forensics")
     if f and f.get("disponible"):
