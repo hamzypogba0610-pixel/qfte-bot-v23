@@ -22,6 +22,7 @@ from qfte_engine.cross_market import (
     analyser_cross_market,
     ajuster_fiabilite_consistency,
 )
+from qfte_engine.regime import analyser_regime
 
 
 def poisson_pmf(k, lam):
@@ -595,6 +596,8 @@ def analyser_match_football(
 
     ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
     forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
+    
+    regime = analyser_regime(forensics)
 
     forensics_sharpe = 0.0
     if forensics and forensics.get("disponible"):
@@ -838,6 +841,7 @@ def analyser_match_football(
     resultat["details"] = details
     resultat["signature"] = signature_dict
     resultat["forensics"] = forensics
+    résultat["regime"] = regime
     resultat["stacking"] = stacking
     resultat["cross_market"] = cross_market
     resultat["p1"] = round(p1, 4)
