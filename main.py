@@ -224,7 +224,7 @@ async def health():
     return {"status": "ok", "version": "V23.0"}
 
 
-       @app.post("/analyser", response_class=HTMLResponse)
+@app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
     form = await request.form()
 
