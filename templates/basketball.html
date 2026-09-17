@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QFTE V23.0 — Basketball</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, Arial, sans-serif; background: #0f0f1a; color: #eee; margin: 0; padding: 16px; line-height: 1.4; }
+        h1 { color: #ffcc00; text-align: center; font-size: 22px; margin: 8px 0; }
+        h2 { color: #ffcc00; font-size: 15px; margin: 0; }
+        .subtitle { text-align: center; color: #999; font-size: 12px; margin-bottom: 20px; }
+        label { display: block; font-size: 13px; color: #bbb; margin: 10px 0 4px; }
+        input, select, textarea { width: 100%; padding: 10px; background: #1c1c2e; border: 1px solid #333; border-radius: 6px; color: #eee; font-size: 14px; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #ffcc00; }
+        .row { display: flex; gap: 8px; }
+        .row > div { flex: 1; }
+        .checkbox-line { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+        .checkbox-line input { width: auto; }
+        button { width: 100%; padding: 16px; background: #ffcc00; color: #000; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-top: 24px; cursor: pointer; }
+        button:active { background: #e6b800; }
+        .section-box { background: #14141f; border: 1px solid #262636; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+        details { background: #14141f; border: 1px solid #262636; border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+        details[open] { border-color: #ffcc00; }
+        summary { padding: 14px; cursor: pointer; font-size: 14px; font-weight: bold; color: #ffcc00; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+        summary::after { content: "▾"; color: #999; font-size: 12px; }
+        details[open] summary::after { content: "▴"; }
+        summary::-webkit-details-marker { display: none; }
+        .details-content { padding: 0 14px 14px 14px; }
+        .hint { font-size: 11px; color: #888; margin: 4px 0 8px; }
+        .example { font-size: 11px; color: #4ade80; background: #0a1f0a; padding: 6px 8px; border-radius: 6px; margin-top: 6px; font-family: monospace; }
+        .back-link { display: block; text-align: center; color: #ffcc00; text-decoration: none; font-size: 13px; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+
+    <a href="/" class="back-link">← Retour au choix du sport</a>
+
+    <h1>🏀 QFTE — Basketball</h1>
+    <p class="subtitle">Analyse Sharp-Money V23.0</p>
+
+    <form action="/analyser" method="post">
+
+        <input type="hidden" name="sport" value="basketball">
+
+        <div class="section-box">
+            <h2>🏆 Championnat</h2>
+            <p class="hint">Impacte le calcul de l'écart-type (sigma).</p>
+            <select name="ligue">
+                <option value="nba">🇺🇸 NBA (sigma 11.5)</option>
+                <option value="euroleague">🇪🇺 Euroleague (sigma 9.0)</option>
+                <option value="lnb">🇫🇷 LNB Pro A (sigma 9.5)</option>
+                <option value="acb">🇪🇸 ACB Espagne (sigma 9.0)</option>
+                <option value="bbl">🇩🇪 BBL Allemagne (sigma 9.5)</option>
+                <option value="lega">🇮🇹 Lega Basket Italie (sigma 9.5)</option>
+                <option value="ncaa">🎓 NCAA (sigma 10.0)</option>
+                <option value="fiba">🌍 FIBA (sigma 10.0)</option>
+                <option value="autre">🌐 Autre (sigma 10.5)</option>
+            </select>
+        </div>
+
+        <div class="section-box">
+            <h2>📋 Match à analyser</h2>
+            <label>Compétition</label>
+            <input type="text" name="competition" placeholder="Ex : NBA, Euroleague..." required>
+            <label>Équipe à domicile</label>
+            <input type="text" name="equipe_domicile" placeholder="Ex : Boston Celtics" required>
+            <label>Équipe à l'extérieur</label>
+            <input type="text" name="equipe_exterieur" placeholder="Ex : Los Angeles Lakers" required>
+            <label>Date du match</label>
+            <input type="date" name="date_match" required>
+        </div>
+
+        <div class="section-box" style="background:#0a1a2a;border-color:#1e3a5f;">
+            <h2 style="color:#4ea8ff;">💡 Formats</h2>
+            <p style="font-size:12px;color:#aac;margin:8px 0 0 0;">
+            Scores : <b>BP-BC</b> (points marqués/encaissés)<br>
+            Moneyline : <b>Cote_dom/Cote_ext</b><br>
+            Spread : <b>Spread_dom/Cote_dom/Spread_ext/Cote_ext</b><br>
+            Total : <b>Ligne/Cote_Over/Cote_Under</b><br>
+            Quart : <b>Total=Ligne/Over/Under | ML=Dom/Ext</b>
+            </p>
+                                                                     </div>
+
+      
+<details open>
+    <summary>🏠 Domicile — 5 derniers à domicile</summary>
+    <div class="details-content">
+        <input type="text" name="home_contextuel" placeholder="Ex : 112-105, 118-110, 108-102, 115-108, 120-115">
+        <div class="hint">Points marqués-encaissés des 5 derniers matchs à domicile.</div>
+    </div>
+</details>
+
+<details>
+    <summary>🌍 Domicile — 5 derniers globaux (tous terrains)</summary>
+    <div class="details-content">
+        <input type="text" name="home_global" placeholder="Ex : 110-105, 115-108, 120-112, 108-100, 118-110">
+    </div>
+</details>
+
+<details>
+    <summary>✈️ Extérieur — 5 derniers à l'extérieur</summary>
+    <div class="details-content">
+        <input type="text" name="away_contextuel" placeholder="Ex : 102-108, 110-115, 105-112, 108-110, 100-115">
+        <div class="hint">Points marqués-encaissés des 5 derniers matchs à l'extérieur.</div>
+    </div>
+</details>
+
+<details>
+    <summary>🌍 Extérieur — 5 derniers globaux (tous terrains)</summary>
+    <div class="details-content">
+        <input type="text" name="away_global" placeholder="Ex : 105-110, 100-108, 108-112, 102-105, 110-118">
+    </div>
+</details>
+
+<details>
+    <summary>⚔️ H2H — 3 dernières confrontations</summary>
+    <div class="details-content">
+        <input type="text" name="h2h" placeholder="Ex : 112-108, 105-110, 115-112">
+        <div class="hint">Score du point de vue de l'équipe à domicile.</div>
+    </div>
+</details>
+
+<details>
+    <summary>🏆 Classement</summary>
+    <div class="details-content">
+        <div class="row">
+            <div>
+                <label>Position domicile</label>
+                <input type="number" name="pos_dom" min="1" placeholder="Ex : 1">
+            </div>
+            <div>
+                <label>Position extérieur</label>
+                <input type="number" name="pos_ext" min="1" placeholder="Ex : 10">
+            </div>
+        </div>
+        <label>Nombre total d'équipes</label>
+        <input type="number" name="total_equipes" min="2" value="30">
+    </div>
+</details>
+
+<details>
+    <summary>📊 Stats Avancées (optionnel — améliore la précision)</summary>
+    <div class="details-content">
+        <p class="hint">Si tu connais ces stats, elles améliorent la précision. Sinon laisse vide.</p>
+        <label>Pace — Domicile (possessions / 48 min)</label>
+        <input type="number" step="0.1" name="pace_dom" placeholder="NBA: ~100 | Euroleague: ~78">
+        <label>OffRtg — Domicile (points / 100 possessions)</label>
+        <input type="number" step="0.1" name="offrtg_dom" placeholder="Ex : 118.5">
+        <label>DefRtg — Domicile (points concédés / 100 possessions)</label>
+        <input type="number" step="0.1" name="defrtg_dom" placeholder="Ex : 110.2">
+        <label>Pace — Extérieur</label>
+        <input type="number" step="0.1" name="pace_ext" placeholder="Ex : 99.5">
+        <label>OffRtg — Extérieur</label>
+        <input type="number" step="0.1" name="offrtg_ext" placeholder="Ex : 115.0">
+        <label>DefRtg — Extérieur</label>
+        <input type="number" step="0.1" name="defrtg_ext" placeholder="Ex : 112.0">
+    </div>
+</details>
+
+      
+        <details>
+            <summary>📈 Moneyline FT (Vainqueur)</summary>
+            <div class="details-content">
+                <p class="hint">Format : <b>Cote_domicile/Cote_extérieur</b> (pas de nul au basket).</p>
+                <input type="text" name="ml_ft" placeholder="Ex : 1.55/2.30">
+                <div class="example">Exemple : 1.55/2.30</div>
+            </div>
+        </details>
+
+        <details>
+            <summary>🕐 Mi-temps (1H / 2H)</summary>
+            <div class="details-content">
+                <label>Moneyline 1ère mi-temps (1H)</label>
+                <input type="text" name="ml_1h" placeholder="Ex : 1.75/2.00">
+                <div class="example">Format : Cote_dom/Cote_ext</div>
+                <label>Total Points 1ère mi-temps (1H)</label>
+                <input type="text" name="total_1h" placeholder="Ex : 112.5/1.90/1.90">
+                <div class="example">Format : Ligne/Cote_Over/Cote_Under</div>
+                <label>Moneyline 2ème mi-temps (2H)</label>
+                <input type="text" name="ml_2h" placeholder="Ex : 1.80/1.95">
+                <div class="example">Format : Cote_dom/Cote_ext</div>
+                <label>Total Points 2ème mi-temps (2H)</label>
+                <input type="text" name="total_2h" placeholder="Ex : 108.5/1.85/1.95">
+                <div class="example">Format : Ligne/Cote_Over/Cote_Under</div>
+            </div>
+        </details>
+
+        <details>
+            <summary>🕐 Quarts-temps (Q1 / Q2 / Q3 / Q4)</summary>
+            <div class="details-content">
+                <p class="hint">Format : <b>Total=Ligne/Over/Under | ML=Dom/Ext</b></p>
+                <label>Q1 — 1er quart-temps</label>
+                <input type="text" name="q1" placeholder="Ex : Total=55.5/1.85/1.95 | ML=1.80/2.05">
+                <div class="example">Exemple : Total=55.5/1.85/1.95 | ML=1.80/2.05</div>
+                <label>Q2 — 2ème quart-temps</label>
+                <input type="text" name="q2" placeholder="Ex : Total=53.5/1.90/1.90 | ML=1.85/2.00">
+                <div class="example">Exemple : Total=53.5/1.90/1.90 | ML=1.85/2.00</div>
+                <label>Q3 — 3ème quart-temps</label>
+                <input type="text" name="q3" placeholder="Ex : Total=55.0/1.85/1.95 | ML=1.75/2.10">
+                <div class="example">Exemple : Total=55.0/1.85/1.95 | ML=1.75/2.10</div>
+                <label>Q4 — 4ème quart-temps</label>
+                <input type="text" name="q4" placeholder="Ex : Total=53.5/1.90/1.90 | ML=1.80/2.05">
+                <div class="example">Exemple : Total=53.5/1.90/1.90 | ML=1.80/2.05</div>
+            </div>
+        </details>
+
+        <details>
+            <summary>🎯 Spread (Handicap basket)</summary>
+            <div class="details-content">
+                <p class="hint">Format : <b>Spread_dom/Cote_dom/Spread_ext/Cote_ext</b></p>
+                <input type="text" name="handicap" placeholder="Ex : -5.5/1.90/+5.5/1.95, -8.5/2.10/+8.5/1.75">
+                <div class="example">Exemple : -5.5/1.90/+5.5/1.95, -8.5/2.10/+8.5/1.75</div>
+            </div>
+        </details>
+
+        <details>
+            <summary>⚽ Total Points FT (Over/Under)</summary>
+            <div class="details-content">
+                <p class="hint">Format : <b>Ligne/Cote_Over/Cote_Under</b></p>
+                <input type="text" name="ou_buts" placeholder="Ex : 215.5/1.85/1.95, 220.5/1.90/1.90">
+                <div class="example">Exemple : 210.5/1.85/1.95, 215.5/1.85/1.95, 220.5/1.90/1.90</div>
+            </div>
+        </details>
+
+        <details>
+            <summary>🎚️ Contexte</summary>
+            <div class="details-content">
+                <div class="checkbox-line">
+                    <input type="checkbox" name="blessures_domicile" id="bless_dom">
+                    <label for="bless_dom" style="margin:0;">Blessures importantes — équipe domicile</label>
+                </div>
+                <div class="checkbox-line">
+                    <input type="checkbox" name="blessures_exterieur" id="bless_ext">
+                    <label for="bless_ext" style="margin:0;">Blessures importantes — équipe extérieur</label>
+                </div>
+                <div class="checkbox-line">
+                    <input type="checkbox" name="fatigue_domicile" id="fat_dom">
+                    <label for="fat_dom" style="margin:0;">😴 Back-to-back — équipe domicile</label>
+                </div>
+                <div class="checkbox-line">
+                    <input type="checkbox" name="fatigue_exterieur" id="fat_ext">
+                    <label for="fat_ext" style="margin:0;">😴 Back-to-back — équipe extérieur</label>
+                </div>
+                <label>Notes libres (facultatif)</label>
+                <textarea name="notes" rows="2" placeholder="Ex : arbitre strict..."></textarea>
+            </div>
+        </details>
+
+        <button type="submit">🔍 Analyser le match</button>
+
+    </form>
+
+</body>
+</html>
