@@ -124,15 +124,40 @@ def fi(form, k):
         return None
 
 
-def fopt(form, k):
-    v = form.get(k, "")
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except:
-        return None
 
+def bloc_candidat(c):
+    ec = "#4ade80" if c["ev"] >= 0 else "#ef4444"
+    if c["passe_filtres"]:
+        st = '<span style="color:#4ade80;font-weight:bold;">PASSE</span>'
+        rh = ""
+    else:
+        st = '<span style="color:#ef4444;font-weight:bold;">REJETE</span>'
+        rh = "".join(['<p style="color:#ef4444;font-size:12px;">-> ' + x + '</p>' for x in c["raisons_rejet"]])
+
+    out = '<div style="border:1px solid #262636;background:#14141f;padding:10px;margin-top:8px;border-radius:8px;">'
+    if c.get("marche"):
+        out += '<p><b>Marche :</b> ' + c["marche"] + '</p>'
+    out += '<p><b>Selection :</b> ' + c["selection"] + '</p>'
+    out += '<p><b>Proba :</b> ' + str(round(c["p"] * 100, 2)) + '%</p>'
+    out += '<p><b>Cote :</b> ' + str(c["cote"]) + '</p>'
+    out += '<p><b>EV :</b> <span style="color:' + ec + ';">' + str(round(c["ev"] * 100, 2)) + '%</span></p>'
+    if c.get("ajustement_forensics") and c["ajustement_forensics"] != 0:
+        s = "+" if c["ajustement_forensics"] > 0 else ""
+        col = "#4ade80" if c["ajustement_forensics"] > 0 else "#ef4444"
+        out += '<p><b>Ajust. Forensics :</b> <span style="color:' + col + ';">' + s + str(c["ajustement_forensics"]) + '</span></p>'
+    if c.get("ajustement_stacking") and c["ajustement_stacking"] != 0:
+        s = "+" if c["ajustement_stacking"] > 0 else ""
+        col = "#4ade80" if c["ajustement_stacking"] > 0 else "#ef4444"
+        out += '<p><b>Ajust. Stacking :</b> <span style="color:' + col + ';">' + s + str(c["ajustement_stacking"]) + '</span></p>'
+    if c.get("ajustement_consistency") and c["ajustement_consistency"] != 0:
+        s = "+" if c["ajustement_consistency"] > 0 else ""
+        col = "#4ade80" if c["ajustement_consistency"] > 0 else "#ef4444"
+        out += '<p><b>Ajust. Cross-Market :</b> <span style="color:' + col + ';">' + s + str(c["ajustement_consistency"]) + '</span></p>'
+    out += '<p><b>Fiabilite :</b> ' + str(c["fiabilite"]) + '</p>'
+    out += '<p><b>Filtres :</b> ' + st + '</p>'
+    out += rh
+    out += '</div>'
+    return out
 
 
 def bloc_visuel(r, sport):
@@ -265,29 +290,90 @@ async def analyser(request: Request):
             ligue
         )
 
-        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
         html += '<h1 style="color:#ffcc00;">Analyse Football</h1>'
         html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
 
         p = r.get("pari_retenu")
         if p:
-            html += '<h2 style="color:#4ade80;">PARI RETENU</h2>'
-            html += '<p>Selection : ' + p["selection"] + '</p>'
-            html += '<p>Cote : ' + str(p["cote"]) + '</p>'
-            html += '<p>Probabilite : ' + str(round(p["p"] * 100, 2)) + '%</p>'
-            html += '<p>EV : ' + str(round(p["ev"] * 100, 2)) + '%</p>'
-            html += '<p>Fiabilite : ' + str(p["fiabilite"]) + '</p>'
+            html += '<div style="border:2px solid #4ade80;background:#0a1a0a;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#4ade80;margin-top:0;">PARI RETENU</h2>'
+            html += '<p><b>Marche :</b> ' + p.get("marche", "?") + '</p>'
+            html += '<p><b>Selection :</b> ' + p["selection"] + '</p>'
+            html += '<p><b>Cote :</b> ' + str(p["cote"]) + '</p>'
+            html += '<p><b>Probabilite :</b> ' + str(round(p["p"] * 100, 2)) + '%</p>'
+            html += '<p><b>EV :</b> ' + str(round(p["ev"] * 100, 2)) + '%</p>'
+            html += '<p><b>Fiabilite :</b> ' + str(p["fiabilite"]) + '</p>'
+            html += '<p><b>Niveau :</b> ' + p["niveau"] + '</p>'
+            html += '<p><b>Decision :</b> ' + p["decision"] + '</p>'
+            if p.get("stake_origine"):
+                html += '<p><b>Stake origine :</b> ' + str(p["stake_origine"]) + '%</p>'
+            html += '<p><b>Stake final :</b> ' + str(p["stake"]) + '% bankroll</p>'
+            html += '</div>'
         else:
-            html += '<h2 style="color:#ef4444;">AUCUN PARI RETENU</h2>'
+            html += '<div style="border:2px solid #ef4444;background:#1a0a0a;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#ef4444;margin-top:0;">AUCUN PARI RETENU</h2>'
+            html += '<p>Aucune selection ne respecte les filtres V23.0.</p>'
+            html += '</div>'
 
-        html += '<h2>Probabilites 1X2</h2>'
+        html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
+        html += '<h2 style="color:#ffcc00;margin-top:0;">Buts attendus (lambda)</h2>'
+        html += '<p>' + eq_dom + ' : ' + str(r["lambda_home"]) + '</p>'
+        html += '<p>' + eq_ext + ' : ' + str(r["lambda_away"]) + '</p>'
+        html += '</div>'
+
+        html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
+        html += '<h2 style="color:#ffcc00;margin-top:0;">Probabilites 1X2</h2>'
         html += '<p>P(1) : ' + str(round(r["p1"] * 100, 2)) + '%</p>'
         html += '<p>P(X) : ' + str(round(r["px"] * 100, 2)) + '%</p>'
         html += '<p>P(2) : ' + str(round(r["p2"] * 100, 2)) + '%</p>'
+        html += '</div>'
 
         html += bloc_visuel(r, "football")
 
-        html += '<p><a href="/football" style="color:#ffcc00;">Retour</a></p>'
+        if r.get("ou_securite"):
+            s = r["ou_securite"]
+            html += '<div style="border:2px solid #60a5fa;background:#0a1020;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#60a5fa;margin-top:0;">🛡️ SECURITE O/U</h2>'
+            html += '<p><b>Marche :</b> ' + s.get("type_ou", "?") + ' ' + str(s.get("ligne", "?")) + '</p>'
+            html += '<p><b>Cote :</b> ' + str(s["cote"]) + '</p>'
+            html += '<p><b>P(effective) :</b> ' + str(round(s["p"] * 100, 2)) + '%</p>'
+            html += '<p><b>EV :</b> ' + str(round(s["ev"] * 100, 2)) + '%</p>'
+            html += '<p><b>Fiabilite :</b> ' + str(s["fiabilite"]) + '</p>'
+            html += '</div>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 1X2</h2>'
+        for c in r["candidats"]:
+            html += bloc_candidat(c)
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Handicap</h2>'
+        if r["handicap_resultats"]:
+            for h in r["handicap_resultats"]:
+                html += bloc_candidat(h)
+        else:
+            html += '<p style="color:#666;">Aucun handicap saisi.</p>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Over / Under</h2>'
+        if r["ou_resultats"]:
+            for o in r["ou_resultats"]:
+                html += bloc_candidat(o)
+        else:
+            html += '<p style="color:#666;">Aucun O/U saisi.</p>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 2 Mi-temps</h2>'
+        m2 = r["marches_2mt"]
+        if m2.get("ht"):
+            html += '<p><b>P 1 / X / 2 HT :</b> ' + str(round(m2["p1_ht"] * 100, 1)) + '% / ' + str(round(m2["px_ht"] * 100, 1)) + '% / ' + str(round(m2["p2_ht"] * 100, 1)) + '%</p>'
+            for c in m2["ht"]:
+                html += bloc_candidat(c)
+        if m2.get("2h"):
+            html += '<p><b>P 1 / X / 2 2H :</b> ' + str(round(m2["p1_2h"] * 100, 1)) + '% / ' + str(round(m2["px_2h"] * 100, 1)) + '% / ' + str(round(m2["p2_2h"] * 100, 1)) + '%</p>'
+            for c in m2["2h"]:
+                html += bloc_candidat(c)
+        if not m2.get("ht") and not m2.get("2h"):
+            html += '<p style="color:#666;">Aucune cote 2 mi-temps saisie.</p>'
+
+        html += '<p style="margin-top:20px;"><a href="/football" style="color:#ffcc00;">Retour</a></p>'
         html += '</body></html>'
         return HTMLResponse(content=html)
 
@@ -314,28 +400,98 @@ async def analyser(request: Request):
             o1, o2, c1, c2
         )
 
-        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
         html += '<h1 style="color:#ffcc00;">Analyse Basketball</h1>'
         html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
 
         p = r.get("pari_retenu")
         if p:
-            html += '<h2 style="color:#4ade80;">PARI RETENU</h2>'
-            html += '<p>Selection : ' + p["selection"] + '</p>'
-            html += '<p>Cote : ' + str(p["cote"]) + '</p>'
-            html += '<p>Probabilite : ' + str(round(p["p"] * 100, 2)) + '%</p>'
-            html += '<p>EV : ' + str(round(p["ev"] * 100, 2)) + '%</p>'
-            html += '<p>Fiabilite : ' + str(p["fiabilite"]) + '</p>'
+            html += '<div style="border:2px solid #4ade80;background:#0a1a0a;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#4ade80;margin-top:0;">PARI RETENU</h2>'
+            html += '<p><b>Marche :</b> ' + p.get("marche", "?") + '</p>'
+            html += '<p><b>Selection :</b> ' + p["selection"] + '</p>'
+            html += '<p><b>Cote :</b> ' + str(p["cote"]) + '</p>'
+            html += '<p><b>Probabilite :</b> ' + str(round(p["p"] * 100, 2)) + '%</p>'
+            html += '<p><b>EV :</b> ' + str(round(p["ev"] * 100, 2)) + '%</p>'
+            html += '<p><b>Fiabilite :</b> ' + str(p["fiabilite"]) + '</p>'
+            html += '<p><b>Niveau :</b> ' + p["niveau"] + '</p>'
+            html += '<p><b>Decision :</b> ' + p["decision"] + '</p>'
+            if p.get("stake_origine"):
+                html += '<p><b>Stake origine :</b> ' + str(p["stake_origine"]) + '%</p>'
+            html += '<p><b>Stake final :</b> ' + str(p["stake"]) + '% bankroll</p>'
+            html += '</div>'
         else:
-            html += '<h2 style="color:#ef4444;">AUCUN PARI RETENU</h2>'
+            html += '<div style="border:2px solid #ef4444;background:#1a0a0a;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#ef4444;margin-top:0;">AUCUN PARI RETENU</h2>'
+            html += '<p>Aucune selection ne respecte les filtres V23.0.</p>'
+            html += '</div>'
 
-        html += '<h2>Points attendus</h2>'
+        html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
+        html += '<h2 style="color:#ffcc00;margin-top:0;">Points attendus (mu)</h2>'
         html += '<p>' + eq_dom + ' : ' + str(r["mu_home"]) + '</p>'
         html += '<p>' + eq_ext + ' : ' + str(r["mu_away"]) + '</p>'
-        html += '<p>Total : ' + str(r["mu_total"]) + '</p>'
+        html += '<p>Total FT : ' + str(r["mu_total"]) + '</p>'
+        html += '<p>Total 1H : ' + str(r["mu_total_1h"]) + '</p>'
+        html += '<p>Total 2H : ' + str(r["mu_total_2h"]) + '</p>'
+        html += '</div>'
 
         html += bloc_visuel(r, "basketball")
 
-        html += '<p><a href="/basketball" style="color:#ffcc00;">Retour</a></p>'
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Moneyline</h2>'
+        if r["ml_candidats"]:
+            for c in r["ml_candidats"]:
+                html += bloc_candidat(c)
+        else:
+            html += '<p style="color:#666;">Aucune cote ML saisie.</p>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Spread</h2>'
+        if r["spread_candidats"]:
+            for c in r["spread_candidats"]:
+                html += bloc_candidat(c)
+        else:
+            html += '<p style="color:#666;">Aucun spread saisi.</p>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Total Points FT</h2>'
+        if r["total_ft_candidats"]:
+            for c in r["total_ft_candidats"]:
+                html += bloc_candidat(c)
+        else:
+            html += '<p style="color:#666;">Aucun total FT saisi.</p>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 1ere Mi-temps (1H)</h2>'
+        if r["ml_1h_candidats"]:
+            for c in r["ml_1h_candidats"]:
+                html += bloc_candidat(c)
+        if r["total_1h_candidats"]:
+            for c in r["total_1h_candidats"]:
+                html += bloc_candidat(c)
+        if not r["ml_1h_candidats"] and not r["total_1h_candidats"]:
+            html += '<p style="color:#666;">Aucune cote 1H saisie.</p>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 2eme Mi-temps (2H)</h2>'
+        if r["ml_2h_candidats"]:
+            for c in r["ml_2h_candidats"]:
+                html += bloc_candidat(c)
+        if r["total_2h_candidats"]:
+            for c in r["total_2h_candidats"]:
+                html += bloc_candidat(c)
+        if not r["ml_2h_candidats"] and not r["total_2h_candidats"]:
+            html += '<p style="color:#666;">Aucune cote 2H saisie.</p>'
+
+        for nom_q in ["Q1", "Q2", "Q3", "Q4"]:
+            qd = r["quarts"][nom_q]
+            html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - ' + nom_q + '</h2>'
+            if qd.get("mu"):
+                html += '<p><b>Mu total ' + nom_q + ' :</b> ' + str(qd["mu"]) + '</p>'
+            if qd["total"]:
+                for c in qd["total"]:
+                    html += bloc_candidat(c)
+            if qd["ml"]:
+                for c in qd["ml"]:
+                    html += bloc_candidat(c)
+            if not qd["total"] and not qd["ml"]:
+                html += '<p style="color:#666;">Aucune cote ' + nom_q + ' saisie.</p>'
+
+        html += '<p style="margin-top:20px;"><a href="/basketball" style="color:#ffcc00;">Retour</a></p>'
         html += '</body></html>'
-        return HTMLResponse(content=html) 
+        return HTMLResponse(content=html)
