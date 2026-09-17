@@ -154,8 +154,10 @@ async def health():
 
 
 
-@app.post("/analyser", response_class=HTMLResponse)
-form = await request.form()
+
+ @app.post("/analyser", response_class=HTMLResponse)
+async def analyser(request: Request):
+    form = await request.form()
 
 sport = form.get("sport", "football")
 ligue = form.get("ligue", "autre")
