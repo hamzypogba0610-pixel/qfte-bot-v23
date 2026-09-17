@@ -2,7 +2,7 @@
 qfte_engine/mvp.py
 ------------------
 Moteur QFTE V23.0 - Football
-1X2 + Handicap + O/U + 2 mi-temps + Divergences + SIGNATURE FOOT + FORENSICS + STACKING.
+1X2 + Handicap + O/U + 2 mi-temps + Divergences + SIGNATURE FOOT + FORENSICS + STACKING + CROSS-MARKET.
 """
 
 import math
@@ -17,6 +17,10 @@ from qfte_engine.forensics import (
 from qfte_engine.stacking import (
     analyser_meta_ensemble,
     ajuster_fiabilite_pcs,
+)
+from qfte_engine.cross_market import (
+    analyser_cross_market,
+    ajuster_fiabilite_consistency,
 )
 
 
@@ -474,10 +478,8 @@ def analyser_match_football(
     lh_brut = max(lh_brut, 0.1)
     la_brut = max(la_brut, 0.1)
 
-    # SIGNATURE FOOT
     signature = analyser_signature_foot(lh_brut, la_brut, ligue=ligue, n_mc=10000, rho=-0.05)
 
-    # STACKING
     ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
     forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
     forensics_sharpe = 0.0
@@ -503,7 +505,6 @@ def analyser_match_football(
     la = signature["lambda_away_bayesien"]
     matrix = signature["matrix_dc"]
 
-    # Utiliser les probas stackees
     p1 = stacking["p1_final"]
     px = stacking["px_final"]
     p2 = stacking["p2_final"]
@@ -537,6 +538,49 @@ def analyser_match_football(
     for o in ou_resultats:
         o = appliquer_forensics_au_candidat(o, forensics)
         o = appliquer_stacking_au_candidat(o, stacking)
+
+    # === CROSS-MARKET CORRELATION ===
+    cross_market = analyser_cross_market(
+        candidats, handicap_resultats, ou_resultats, [],
+        mu_total_ref=(lh + la)
+    )
+    # Ajuster la fiabilite de tous les candidats selon le Consistency Score
+    for c in candidats:
+        fiab_avant = c["fiabilite"]
+        fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
+        c["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
+        c["fiabilite"] = fiab_apres
+        dec, niv = classify_decision(c["fiabilite"], c["ev"])
+        c["decision"] = dec
+        c["niveau"] = niv
+        p_f, r_f = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
+        c["passe_filtres"] = p_f
+        c["raisons_rejet"] = r_f
+        c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if p_f else 0.0
+    for h in handicap_resultats:
+        fiab_avant = h["fiabilite"]
+        fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
+        h["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
+        h["fiabilite"] = fiab_apres
+        dec, niv = classify_decision(h["fiabilite"], h["ev"])
+        h["decision"] = dec
+        h["niveau"] = niv
+        p_f, r_f = appliquer_filtres_discipline(h["p"], h["cote"], h["ev"], h["fiabilite"])
+        h["passe_filtres"] = p_f
+        h["raisons_rejet"] = r_f
+        h["stake"] = compute_stake(h["p"], h["cote"], h["fiabilite"], h["ev"]) if p_f else 0.0
+    for o in ou_resultats:
+        fiab_avant = o["fiabilite"]
+        fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
+        o["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
+        o["fiabilite"] = fiab_apres
+        dec, niv = classify_decision(o["fiabilite"], o["ev"])
+        o["decision"] = dec
+        o["niveau"] = niv
+        p_f, r_f = appliquer_filtres_discipline(o["p"], o["cote"], o["ev"], o["fiabilite"])
+        o["passe_filtres"] = p_f
+        o["raisons_rejet"] = r_f
+        o["stake"] = compute_stake(o["p"], o["cote"], o["fiabilite"], o["ev"]) if p_f else 0.0
 
     ratio_ht_h = compute_ratio_ht(home_ctx)
     ratio_ht_a = compute_ratio_ht(away_ctx)
@@ -632,15 +676,5 @@ def analyser_match_football(
         },
         "forensics": forensics,
         "stacking": stacking,
-        "p1": round(p1, 4), "px": round(px, 4), "p2": round(p2, 4),
-        "ev1": round(ev1, 4), "evx": round(evx, 4), "ev2": round(ev2, 4),
-        "f1": f1, "fx": fx, "f2": f2,
-        "candidats": candidats,
-        "handicap_resultats": handicap_resultats,
-        "ou_resultats": ou_resultats,
-        "marches_2mt": marches_2mt,
-        "ou_securite": ou_securite,
-        "pari_retenu": pari_retenu,
-        "top_3_scores": top_3,
-        "divergences": divergences,
-    }
+        "cross_market": cross_market,
+        "p1": round(p1, 4), "px": round(px, 
