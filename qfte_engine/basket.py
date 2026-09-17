@@ -1,8 +1,8 @@
 """
 qfte_engine/basket.py
 ---------------------
-Moteur QFTE V23.0 - Basketball multi-ligues.
-True Sigma + Pace + Q1-Q4 + MARKET FORENSICS + META-ENSEMBLE.
+Moteur QFTE V23.0 - Basketball
+True Sigma + Pace + Q1-Q4 + Forensics + Stacking + Cross-Market.
 """
 
 import math
@@ -15,6 +15,14 @@ from qfte_engine.signature import (
 from qfte_engine.forensics import (
     analyser_market_forensics,
     ajuster_fiabilite,
+)
+from qfte_engine.stacking import (
+    analyser_meta_ensemble,
+    ajuster_fiabilite_pcs,
+)
+from qfte_engine.cross_market import (
+    analyser_cross_market,
+    ajuster_fiabilite_consistency,
 )
 
 
@@ -162,31 +170,265 @@ def appliquer_forensics_au_candidat(c, forensics):
         c["ajustement_forensics"] = 0.0
         c["sharpe_signal"] = None
         return c
-
     sharpe = forensics["sharpe_signal"]
     fiab_origine = c["fiabilite"]
     fiab_ajustee = ajuster_fiabilite(fiab_origine, sharpe)
     ajustement = round(fiab_ajustee - fiab_origine, 3)
-
     c["fiabilite_origine"] = fiab_origine
     c["fiabilite"] = fiab_ajustee
     c["ajustement_forensics"] = ajustement
     c["sharpe_signal"] = sharpe["sharpe_signal"]
-
     dec, niv = classify(c["fiabilite"], c["ev"])
     c["decision"] = dec
     c["niveau"] = niv
-
     passe, raisons = appliquer_filtres(c["p"], c["cote"], c["ev"], c["fiabilite"])
     c["passe_filtres"] = passe
     c["raisons_rejet"] = raisons
     c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+    return c
 
+
+def appliquer_stacking_au_candidat(c, stacking):
+    if not stacking or not stacking.get("disponible"):
+        c["pcs_label"] = None
+        c["ajustement_stacking"] = 0.0
+        return c
+    pcs = stacking["pcs"]
+    fiab_avant = c["fiabilite"]
+    fiab_apres = ajuster_fiabilite_pcs(fiab_avant, pcs)
+    ajustement = round(fiab_apres - fiab_avant, 3)
+    c["fiabilite"] = fiab_apres
+    c["pcs_label"] = pcs["label"]
+    c["ajustement_stacking"] = ajustement
+    dec, niv = classify(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+    passe, raisons = appliquer_filtres(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = passe
+    c["raisons_rejet"] = raisons
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
     return c
 
 
 def sample_normal(mu, sigma):
-    """Tirage Normal via Box-Muller."""
+    u1 = random.random()
+    u2 = random.random()
+    z = math.sqrt(-2 * math.log(u1 + 1e-10)) * math.cos(2 * math.pi * u2)
+    return mu + sigma * z
+
+"""
+qfte_engine/basket.py
+---------------------
+Moteur QFTE V23.0 - Basketball
+True Sigma + Pace + Q1-Q4 + Forensics + Stacking + Cross-Market.
+"""
+
+import math
+import random
+from qfte_engine.signature import (
+    analyser_true_sigma,
+    sigma_mt_depuis_ft,
+    sigma_quart_depuis_ft,
+)
+from qfte_engine.forensics import (
+    analyser_market_forensics,
+    ajuster_fiabilite,
+)
+from qfte_engine.stacking import (
+    analyser_meta_ensemble,
+    ajuster_fiabilite_pcs,
+)
+from qfte_engine.cross_market import (
+    analyser_cross_market,
+    ajuster_fiabilite_consistency,
+)
+
+
+SIGMA_PAR_LIGUE = {
+    "nba": (11.5, 8.0),
+    "euroleague": (9.0, 7.0),
+    "lnb": (9.5, 7.0),
+    "acb": (9.0, 7.0),
+    "bbl": (9.5, 7.0),
+    "lega": (9.5, 7.0),
+    "ncaa": (10.0, 7.5),
+    "fiba": (10.0, 7.5),
+    "autre": (10.5, 7.5),
+}
+
+
+def get_sigmas(ligue):
+    if not ligue:
+        return (11.0, 8.0)
+    return SIGMA_PAR_LIGUE.get(ligue, (10.5, 7.5))
+
+
+def norm_cdf(x, mu=0.0, sigma=1.0):
+    if sigma <= 0:
+        return 0.0 if x < mu else 1.0
+    return 0.5 * (1 + math.erf((x - mu) / (sigma * math.sqrt(2))))
+
+
+def moy(vals):
+    v = [x for x in vals if x is not None]
+    if not v:
+        return 0.0
+    return sum(v) / len(v)
+
+
+def facteur_blessures(a):
+    return 0.92 if a else 1.00
+
+
+def facteur_fatigue(a):
+    return 0.94 if a else 1.00
+
+
+def facteur_classement(pos_dom, pos_ext, total):
+    if pos_dom is None or pos_ext is None or total is None or total <= 1:
+        return (1.0, 1.0)
+    ecart = max(min((pos_ext - pos_dom) / total, 1.0), -1.0)
+    ajust = ecart * 0.10
+    return (round(1.0 + ajust, 3), round(1.0 - ajust, 3))
+
+
+def facteur_h2h(h2h):
+    if not h2h:
+        return (1.00, 1.00)
+    v = sum(1 if m["bp"] > m["bc"] else (-1 if m["bp"] < m["bc"] else 0) for m in h2h)
+    r = v / len(h2h)
+    a = r * 0.06
+    return (round(1.0 + a, 3), round(1.0 - a, 3))
+
+
+def compute_ev(p, cote):
+    if cote <= 0:
+        return 0.0
+    return p * cote - 1.0
+
+
+def compute_reliability(p, cote, ev):
+    f_p = p
+    f_v = 0.0 if ev < 0 else min(ev / 0.15, 1.0)
+    f_c = 0.7 if cote < 1.3 else (0.5 if cote > 8.0 else 1.0)
+    fiab = 0.50 * f_p + 0.30 * f_v + 0.20 * f_c
+    return round(min(max(fiab, 0.0), 1.0), 3)
+
+
+def compute_stake(p, cote, fiab, ev):
+    if ev <= 0 or cote <= 1:
+        return 0.0
+    f_star = (p * cote - 1.0) / (cote - 1.0)
+    if fiab >= 0.85:
+        lam, plaf = 0.30, 1.5
+    elif fiab >= 0.75:
+        lam, plaf = 0.25, 1.0
+    elif fiab >= 0.65:
+        lam, plaf = 0.15, 0.5
+    else:
+        lam, plaf = 0.10, 0.25
+    return round(max(min(f_star * lam * 100, plaf), 0.0), 2)
+
+
+SEUIL_FIABILITE = 0.75
+SEUIL_VALUE = 0.04
+SEUIL_CONFIANCE = 0.70
+
+
+def appliquer_filtres(p, cote, ev, fiab):
+    r = []
+    if fiab < SEUIL_FIABILITE:
+        r.append("Fiabilite " + str(fiab) + " < " + str(SEUIL_FIABILITE))
+    if ev < SEUIL_VALUE:
+        r.append("Value " + str(round(ev * 100, 2)) + "% < " + str(int(SEUIL_VALUE * 100)) + "%")
+    if p < SEUIL_CONFIANCE:
+        r.append("Confiance " + str(round(p * 100, 2)) + "% < " + str(int(SEUIL_CONFIANCE * 100)) + "%")
+    return (len(r) == 0, r)
+
+
+def classify(fiab, ev):
+    if fiab >= 0.85 and ev >= SEUIL_VALUE:
+        return "ATTAQUE FORTE", "ELITE"
+    elif fiab >= 0.75 and ev >= SEUIL_VALUE:
+        return "ATTAQUE", "PREMIUM"
+    elif fiab >= 0.65:
+        return "LEAN", "GOOD"
+    elif fiab >= 0.55:
+        return "SURVEILLANCE", "SURVEILLANCE"
+    else:
+        return "EVITER", "AVOID"
+
+
+def eval_candidat(label, p, cote, marche=None):
+    if not cote or cote <= 0:
+        return None
+    ev = compute_ev(p, cote)
+    fiab = compute_reliability(p, cote, ev)
+    passe, raisons = appliquer_filtres(p, cote, ev, fiab)
+    dec, niv = classify(fiab, ev)
+    stake = compute_stake(p, cote, fiab, ev) if passe else 0.0
+    return {
+        "selection": label,
+        "marche": marche or "?",
+        "p": round(p, 4),
+        "cote": cote,
+        "ev": round(ev, 4),
+        "fiabilite": fiab,
+        "passe_filtres": passe,
+        "raisons_rejet": raisons,
+        "decision": dec,
+        "niveau": niv,
+        "stake": stake,
+    }
+
+
+def appliquer_forensics_au_candidat(c, forensics):
+    if not forensics or not forensics.get("disponible"):
+        c["fiabilite_origine"] = c["fiabilite"]
+        c["ajustement_forensics"] = 0.0
+        c["sharpe_signal"] = None
+        return c
+    sharpe = forensics["sharpe_signal"]
+    fiab_origine = c["fiabilite"]
+    fiab_ajustee = ajuster_fiabilite(fiab_origine, sharpe)
+    ajustement = round(fiab_ajustee - fiab_origine, 3)
+    c["fiabilite_origine"] = fiab_origine
+    c["fiabilite"] = fiab_ajustee
+    c["ajustement_forensics"] = ajustement
+    c["sharpe_signal"] = sharpe["sharpe_signal"]
+    dec, niv = classify(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+    passe, raisons = appliquer_filtres(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = passe
+    c["raisons_rejet"] = raisons
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+    return c
+
+
+def appliquer_stacking_au_candidat(c, stacking):
+    if not stacking or not stacking.get("disponible"):
+        c["pcs_label"] = None
+        c["ajustement_stacking"] = 0.0
+        return c
+    pcs = stacking["pcs"]
+    fiab_avant = c["fiabilite"]
+    fiab_apres = ajuster_fiabilite_pcs(fiab_avant, pcs)
+    ajustement = round(fiab_apres - fiab_avant, 3)
+    c["fiabilite"] = fiab_apres
+    c["pcs_label"] = pcs["label"]
+    c["ajustement_stacking"] = ajustement
+    dec, niv = classify(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+    passe, raisons = appliquer_filtres(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = passe
+    c["raisons_rejet"] = raisons
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+    return c
+
+
+def sample_normal(mu, sigma):
     u1 = random.random()
     u2 = random.random()
     z = math.sqrt(-2 * math.log(u1 + 1e-10)) * math.cos(2 * math.pi * u2)
@@ -294,22 +536,15 @@ RATIO_Q3 = 0.25
 RATIO_Q4 = 0.24
 
 
-def monte_carlo_basket(mu_home, mu_away, sigma, n=5000):
-    """Simule n matchs basket via distribution Normale."""
+def monte_carlo_basket(mu_home, mu_away, sigma, n=3000):
     compteurs = {
         "victoires_dom": 0,
         "victoires_ext": 0,
-        "scores_home": [],
-        "scores_away": [],
         "totaux": [],
     }
     for _ in range(n):
-        sh = sample_normal(mu_home, sigma)
-        sa = sample_normal(mu_away, sigma)
-        sh = max(sh, 60.0)
-        sa = max(sa, 60.0)
-        compteurs["scores_home"].append(sh)
-        compteurs["scores_away"].append(sa)
+        sh = max(sample_normal(mu_home, sigma), 60.0)
+        sa = max(sample_normal(mu_away, sigma), 60.0)
         compteurs["totaux"].append(sh + sa)
         if sh > sa:
             compteurs["victoires_dom"] += 1
@@ -318,51 +553,26 @@ def monte_carlo_basket(mu_home, mu_away, sigma, n=5000):
     return compteurs, n
 
 
-def extraire_probas_mc_basket(compteurs, n):
-    return {
-        "p1": round(compteurs["victoires_dom"] / n, 4),
-        "p2": round(compteurs["victoires_ext"] / n, 4),
-        "px": 0.0,
-    }
-
-
 def calculer_sous_probas_basket(mu_home, mu_away, sigma_ft):
-    """
-    Expose les 4 sous-probas pour le Meta-Ensemble :
-      - Poisson-like (baseline Normal sans ajustement)
-      - DC-equivalent (Normal avec correction "faible ecart")
-      - Monte Carlo
-      - Bayesien (moyenne ponderee)
-    """
-    # 1. Baseline (Normal pur sur mu brut)
+    # Baseline (Normal pur)
     p_ml_home, p_ml_away = proba_moneyline(mu_home, mu_away, sigma_ft)
-    probas_baseline = {
-        "p1": round(p_ml_home, 4),
-        "px": 0.0,
-        "p2": round(p_ml_away, 4),
-    }
+    probas_baseline = {"p1": round(p_ml_home, 4), "px": 0.0, "p2": round(p_ml_away, 4)}
 
-    # 2. DC-equivalent (Normal avec sigma legerement reduit - correction)
+    # DC-equivalent (sigma reduit)
     sigma_dc = sigma_ft * 0.95
     p_dc_home, p_dc_away = proba_moneyline(mu_home, mu_away, sigma_dc)
-    probas_dc = {
-        "p1": round(p_dc_home, 4),
-        "px": 0.0,
-        "p2": round(p_dc_away, 4),
-    }
+    probas_dc = {"p1": round(p_dc_home, 4), "px": 0.0, "p2": round(p_dc_away, 4)}
 
-    # 3. Monte Carlo
-    compteurs, n = monte_carlo_basket(mu_home, mu_away, sigma_ft, n=5000)
-    probas_mc = extraire_probas_mc_basket(compteurs, n)
+    # Monte Carlo
+    compteurs, n = monte_carlo_basket(mu_home, mu_away, sigma_ft, n=3000)
+    p_mc_home = round(compteurs["victoires_dom"] / n, 4)
+    p_mc_away = round(compteurs["victoires_ext"] / n, 4)
+    probas_mc = {"p1": p_mc_home, "px": 0.0, "p2": p_mc_away}
 
-    # 4. Bayesien : moyenne ponderee 60% baseline + 40% MC
-    p_bayes_home = 0.6 * probas_baseline["p1"] + 0.4 * probas_mc["p1"]
-    p_bayes_away = 0.6 * probas_baseline["p2"] + 0.4 * probas_mc["p2"]
-    probas_bayes = {
-        "p1": round(p_bayes_home, 4),
-        "px": 0.0,
-        "p2": round(p_bayes_away, 4),
-    }
+    # Bayesien (moyenne ponderee 60% baseline + 40% MC)
+    p_bayes_home = round(0.6 * probas_baseline["p1"] + 0.4 * probas_mc["p1"], 4)
+    p_bayes_away = round(0.6 * probas_baseline["p2"] + 0.4 * probas_mc["p2"], 4)
+    probas_bayes = {"p1": p_bayes_home, "px": 0.0, "p2": p_bayes_away}
 
     return {
         "probas_poisson": probas_baseline,
@@ -387,8 +597,6 @@ def analyser_match_basket(
     open_1=None, open_2=None,
     curr_1=None, curr_2=None
 ):
-    from qfte_engine.stacking import analyser_meta_ensemble, ajuster_fiabilite_pcs
-
     if h2h_matchs is None:
         h2h_matchs = []
     if hcp_lignes is None:
@@ -417,7 +625,7 @@ def analyser_match_basket(
     volatilite_norm = min(sigma_ft / max(sigma_ligue_ref, 1.0), 1.0)
     ecart_forces_norm = min(abs(mu_home - mu_away) / 30.0, 1.0)
 
-    # Forensics avant le stacking (pour sharpe_signal dans le contexte)
+    # Forensics
     forensics = analyser_market_forensics(open_1, 0, open_2, curr_1, 0, curr_2)
     forensics_sharpe = 0.0
     if forensics and forensics.get("disponible"):
@@ -426,7 +634,7 @@ def analyser_match_basket(
     contexte_stack = {
         "volatilite": volatilite_norm,
         "ecart_forces": ecart_forces_norm,
-        "ligue": ligue,
+        "ligue": ligue or "autre",
         "forensics_sharpe": forensics_sharpe,
     }
 
@@ -440,12 +648,8 @@ def analyser_match_basket(
 
     p1 = stacking["p1_final"]
     p2 = stacking["p2_final"]
-    px = 0.0
 
-    # === MARKET FORENSICS ===
-    # deja calcule ci-dessus
-
-    # Candidats Moneyline
+    # === CANDIDATS MONEYLINE ===
     ml_candidats = []
     if ml_ft and len(ml_ft) == 2:
         c = eval_candidat("FT - Domicile", p1, ml_ft[0], "Moneyline FT")
@@ -459,7 +663,7 @@ def analyser_match_basket(
             c = appliquer_stacking_au_candidat(c, stacking)
             ml_candidats.append(c)
 
-    # Spread
+    # === SPREAD ===
     spread_candidats = []
     for l in hcp_lignes:
         hd = l.get("hcp_dom")
@@ -470,6 +674,8 @@ def analyser_match_basket(
             p_dom, _ = proba_spread(mu_home, mu_away, hd, sigma_ft)
             c = eval_candidat("Spread " + str(hd) + " (Dom)", p_dom, cd, "Spread FT")
             if c:
+                c["hcp"] = hd
+                c["cible"] = "Domicile"
                 c = appliquer_forensics_au_candidat(c, forensics)
                 c = appliquer_stacking_au_candidat(c, stacking)
                 spread_candidats.append(c)
@@ -477,11 +683,13 @@ def analyser_match_basket(
             _, p_ext = proba_spread(mu_home, mu_away, he, sigma_ft)
             c = eval_candidat("Spread " + str(he) + " (Ext)", p_ext, ce, "Spread FT")
             if c:
+                c["hcp"] = he
+                c["cible"] = "Exterieur"
                 c = appliquer_forensics_au_candidat(c, forensics)
                 c = appliquer_stacking_au_candidat(c, stacking)
                 spread_candidats.append(c)
 
-    # Total FT
+    # === TOTAL FT ===
     total_ft_candidats = []
     for l in ou_lignes:
         ligne = l.get("ligne")
@@ -493,17 +701,21 @@ def analyser_match_basket(
         if co:
             c = eval_candidat("Over " + str(ligne), p_over, co, "Total FT")
             if c:
+                c["type_ou"] = "Over"
+                c["ligne"] = ligne
                 c = appliquer_forensics_au_candidat(c, forensics)
                 c = appliquer_stacking_au_candidat(c, stacking)
                 total_ft_candidats.append(c)
         if cu:
             c = eval_candidat("Under " + str(ligne), p_under, cu, "Total FT")
             if c:
+                c["type_ou"] = "Under"
+                c["ligne"] = ligne
                 c = appliquer_forensics_au_candidat(c, forensics)
                 c = appliquer_stacking_au_candidat(c, stacking)
                 total_ft_candidats.append(c)
 
-    # 1H
+    # === 1H ===
     mu_total_1h = mu_total * RATIO_1H
     mu_home_1h = mu_home * RATIO_1H
     mu_away_1h = mu_away * RATIO_1H
@@ -528,16 +740,20 @@ def analyser_match_basket(
         p_over, p_under = proba_total(mu_total_1h, ligne_1h, sigma_mt)
         c = eval_candidat("1H Over " + str(ligne_1h), p_over, co, "Total 1H")
         if c:
+            c["type_ou"] = "Over"
+            c["ligne"] = ligne_1h
             c = appliquer_forensics_au_candidat(c, forensics)
             c = appliquer_stacking_au_candidat(c, stacking)
             total_1h_candidats.append(c)
         c = eval_candidat("1H Under " + str(ligne_1h), p_under, cu, "Total 1H")
         if c:
+            c["type_ou"] = "Under"
+            c["ligne"] = ligne_1h
             c = appliquer_forensics_au_candidat(c, forensics)
             c = appliquer_stacking_au_candidat(c, stacking)
             total_1h_candidats.append(c)
 
-    # 2H
+    # === 2H ===
     mu_total_2h = mu_total * RATIO_2H
     mu_home_2h = mu_home * RATIO_2H
     mu_away_2h = mu_away * RATIO_2H
@@ -562,16 +778,20 @@ def analyser_match_basket(
         p_over, p_under = proba_total(mu_total_2h, ligne_2h, sigma_mt)
         c = eval_candidat("2H Over " + str(ligne_2h), p_over, co, "Total 2H")
         if c:
+            c["type_ou"] = "Over"
+            c["ligne"] = ligne_2h
             c = appliquer_forensics_au_candidat(c, forensics)
             c = appliquer_stacking_au_candidat(c, stacking)
             total_2h_candidats.append(c)
         c = eval_candidat("2H Under " + str(ligne_2h), p_under, cu, "Total 2H")
         if c:
+            c["type_ou"] = "Under"
+            c["ligne"] = ligne_2h
             c = appliquer_forensics_au_candidat(c, forensics)
             c = appliquer_stacking_au_candidat(c, stacking)
             total_2h_candidats.append(c)
 
-    # Quarts
+    # === QUARTS ===
     quart_data = [
         ("Q1", q1, RATIO_Q1),
         ("Q2", q2, RATIO_Q2),
@@ -594,11 +814,15 @@ def analyser_match_basket(
                 p_o, p_u = proba_total(mu_q, ligne_q, sigma_quart)
                 c = eval_candidat(nom + " Over " + str(ligne_q), p_o, co_q, "Total " + nom)
                 if c:
+                    c["type_ou"] = "Over"
+                    c["ligne"] = ligne_q
                     c = appliquer_forensics_au_candidat(c, forensics)
                     c = appliquer_stacking_au_candidat(c, stacking)
                     resultats_q["total"].append(c)
                 c = eval_candidat(nom + " Under " + str(ligne_q), p_u, cu_q, "Total " + nom)
                 if c:
+                    c["type_ou"] = "Under"
+                    c["ligne"] = ligne_q
                     c = appliquer_forensics_au_candidat(c, forensics)
                     c = appliquer_stacking_au_candidat(c, stacking)
                     resultats_q["total"].append(c)
@@ -616,6 +840,48 @@ def analyser_match_basket(
                     resultats_q["ml"].append(c)
         quarts_resultats[nom] = resultats_q
 
+    # === CROSS-MARKET ===
+    cross_market = analyser_cross_market(
+        ml_candidats, spread_candidats, total_ft_candidats, [],
+        mu_total_ref=mu_total
+    )
+    cons_score = cross_market["consistency"]
+
+    def appliquer_consistency(c):
+        fiab_avant = c["fiabilite"]
+        fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cons_score)
+        c["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
+        c["fiabilite"] = fiab_apres
+        dec, niv = classify(c["fiabilite"], c["ev"])
+        c["decision"] = dec
+        c["niveau"] = niv
+        p_f, r_f = appliquer_filtres(c["p"], c["cote"], c["ev"], c["fiabilite"])
+        c["passe_filtres"] = p_f
+        c["raisons_rejet"] = r_f
+        c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if p_f else 0.0
+        return c
+
+    for c in ml_candidats:
+        appliquer_consistency(c)
+    for c in spread_candidats:
+        appliquer_consistency(c)
+    for c in total_ft_candidats:
+        appliquer_consistency(c)
+    for c in ml_1h_candidats:
+        appliquer_consistency(c)
+    for c in total_1h_candidats:
+        appliquer_consistency(c)
+    for c in ml_2h_candidats:
+        appliquer_consistency(c)
+    for c in total_2h_candidats:
+        appliquer_consistency(c)
+    for nom in ["Q1", "Q2", "Q3", "Q4"]:
+        for c in quarts_resultats[nom]["ml"]:
+            appliquer_consistency(c)
+        for c in quarts_resultats[nom]["total"]:
+            appliquer_consistency(c)
+
+    # === FUSION ===
     tous = []
     tous.extend(ml_candidats)
     tous.extend(spread_candidats)
@@ -653,6 +919,7 @@ def analyser_match_basket(
         "signature": signature,
         "forensics": forensics,
         "stacking": stacking,
+        "cross_market": cross_market,
         "details": details,
         "p_ml_home": round(p1, 4),
         "p_ml_away": round(p2, 4),
@@ -669,34 +936,4 @@ def analyser_match_basket(
         "total_2h_candidats": total_2h_candidats,
         "quarts": quarts_resultats,
         "pari_retenu": pari_retenu,
-    }
-
-
-def appliquer_stacking_au_candidat(c, stacking):
-    """Ajuste la fiabilite d'un candidat selon le PCS du stacking."""
-    if not stacking or not stacking.get("disponible"):
-        c["pcs_label"] = None
-        c["ajustement_stacking"] = 0.0
-        return c
-
-    from qfte_engine.stacking import ajuster_fiabilite_pcs
-
-    pcs = stacking["pcs"]
-    fiab_avant = c["fiabilite"]
-    fiab_apres = ajuster_fiabilite_pcs(fiab_avant, pcs)
-    ajustement = round(fiab_apres - fiab_avant, 3)
-
-    c["fiabilite"] = fiab_apres
-    c["pcs_label"] = pcs["label"]
-    c["ajustement_stacking"] = ajustement
-
-    dec, niv = classify(c["fiabilite"], c["ev"])
-    c["decision"] = dec
-    c["niveau"] = niv
-
-    passe, raisons = appliquer_filtres(c["p"], c["cote"], c["ev"], c["fiabilite"])
-    c["passe_filtres"] = passe
-    c["raisons_rejet"] = raisons
-    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
-
-    return c
+        }
