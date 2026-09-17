@@ -149,6 +149,12 @@ def bloc_candidat(c):
         out += '<div class="ligne"><span class="label">Marche</span><span class="val">' + c["marche"] + '</span></div>'
     out += '<div class="ligne"><span class="label">Selection</span><span class="val">' + c["selection"] + '</span></div>'
     out += '<div class="ligne"><span class="label">Probabilite</span><span class="val">' + str(round(c["p"] * 100, 2)) + '%</span></div>'
+    if c.get("ic_95"):
+        ic = c["ic_95"]
+        if ic and ic[0] is not None:
+            out += '<div class="ligne"><span class="label">IC 95%</span><span class="val">[' + str(round(ic[0] * 100, 1)) + '% - ' + str(round(ic[1] * 100, 1)) + '%]</span></div>'
+    if c.get("stabilite") is not None:
+        out += '<div class="ligne"><span class="label">Stabilite</span><span class="val">' + str(c["stabilite"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(c["cote"]) + '</span></div>'
     out += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:' + ec + ';">' + str(round(c["ev"] * 100, 2)) + '%</span></div>'
     out += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(c["fiabilite"]) + '</span></div>'
@@ -242,7 +248,8 @@ async def analyser(request: Request):
             home_ctx, home_glob, away_ctx, away_glob,
             o1, ox, o2, c1, cx, c2,
             meteo, enjeu, bd, be, fd, fe, h2h, hcp_lignes, ou_lignes,
-            pd, pe, te, c_ht, c_2h
+            pd, pe, te, c_ht, c_2h,
+            ligue
         )
 
     analyse_json = json.dumps({
@@ -278,10 +285,8 @@ async def analyser(request: Request):
         html += '<p style="color:#ccc;font-size:13px;">Aucune selection ne respecte les filtres V23.0.</p>'
         html += '</div>'
 
-    # === QFTE SIGNATURE — Bloc True Sigma ===
     if sport == "basketball" and r.get("signature"):
         sig = r["signature"]
-        # Couleur selon alerte
         if sig["niveau_alerte"] == "ELEVEE":
             couleur_alerte = "#ef4444"
         elif sig["niveau_alerte"] == "ATTENTION":
@@ -289,7 +294,6 @@ async def analyser(request: Request):
         else:
             couleur_alerte = "#4ade80"
 
-        # Couleur consistance
         def couleur_cons(c):
             if c is None:
                 return "#666"
@@ -311,8 +315,8 @@ async def analyser(request: Request):
         if sig["sigma_match"] is not None:
             html += '<div class="ligne"><span class="label">Sigma match</span><span class="val">' + str(sig["sigma_match"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">⭐ Sigma final utilise</span><span class="val" style="color:#a855f7;">' + str(sig["sigma_final"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Sigma MT (0.70×)</span><span class="val">' + str(r["sigma_mt"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Sigma Quart (0.52×)</span><span class="val">' + str(r["sigma_quart"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Sigma MT (0.70x)</span><span class="val">' + str(r["sigma_mt"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Sigma Quart (0.52x)</span><span class="val">' + str(r["sigma_quart"]) + '</span></div>'
         html += '</div>'
 
         html += '<div class="box" style="background:#0f1a0f;border-color:#4ade80;">'
@@ -335,7 +339,35 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + sig["message_alerte"] + '</span></div>'
         html += '</div>'
 
+    if sport == "football" and r.get("signature"):
+        sigf = r["signature"]
+        html += '<div class="box" style="border:2px solid #f59e0b;background:#1a150a;">'
+        html += '<h2 style="color:#f59e0b;">🔬 QFTE SIGNATURE FOOT — Temporal Bayesian Dixon-Coles</h2>'
+        html += '<div class="ligne"><span class="label">Methode</span><span class="val">' + sigf["methode"] + '</span></div>'
+        html += '<div class="ligne"><span class="label">Prior ligue</span><span class="val">' + str(sigf["prior_ligue"]) + ' buts/match</span></div>'
+        html += '<div class="ligne"><span class="label">Lambda dom (brut)</span><span class="val">' + str(sigf["lambda_home_brut"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Lambda dom (bayesien)</span><span class="val" style="color:#f59e0b;">' + str(sigf["lambda_home_bayesien"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Lambda ext (brut)</span><span class="val">' + str(sigf["lambda_away_brut"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Lambda ext (bayesien)</span><span class="val" style="color:#f59e0b;">' + str(sigf["lambda_away_bayesien"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Rho Dixon-Coles</span><span class="val">' + str(sigf["rho"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">Simulations Monte Carlo</span><span class="val">' + str(sigf["n_simulations"]) + '</span></div>'
+        html += '<div class="ligne"><span class="label">BTTS Oui (DC)</span><span class="val">' + str(round(sigf["p_btts_oui_dc"] * 100, 2)) + '%</span></div>'
+        html += '<div class="ligne"><span class="label">BTTS Non (DC)</span><span class="val">' + str(round(sigf["p_btts_non_dc"] * 100, 2)) + '%</span></div>'
+        html += '</div>'
 
+        html += '<div class="box" style="background:#0f1a15;border-color:#4ade80;">'
+        html += '<h2 style="color:#4ade80;">📊 Probabilites 1X2 + IC 95% + Stabilite</h2>'
+        ic1 = sigf["ic_p1"]; icx = sigf["ic_px"]; ic2 = sigf["ic_p2"]
+        s1 = sigf["stab_p1"]; sx = sigf["stab_px"]; s2 = sigf["stab_p2"]
+        txt_ic1 = '[' + str(round(ic1[0] * 100, 1)) + '% - ' + str(round(ic1[1] * 100, 1)) + '%]' if ic1 and ic1[0] is not None else "N/A"
+        txt_icx = '[' + str(round(icx[0] * 100, 1)) + '% - ' + str(round(icx[1] * 100, 1)) + '%]' if icx and icx[0] is not None else "N/A"
+        txt_ic2 = '[' + str(round(ic2[0] * 100, 1)) + '% - ' + str(round(ic2[1] * 100, 1)) + '%]' if ic2 and ic2[0] is not None else "N/A"
+        html += '<div class="ligne"><span class="label">P(1) = ' + str(round(r["p1"] * 100, 2)) + '%</span><span class="val">' + txt_ic1 + ' | stab ' + str(s1) + '</span></div>'
+        html += '<div class="ligne"><span class="label">P(X) = ' + str(round(r["px"] * 100, 2)) + '%</span><span class="val">' + txt_icx + ' | stab ' + str(sx) + '</span></div>'
+        html += '<div class="ligne"><span class="label">P(2) = ' + str(round(r["p2"] * 100, 2)) + '%</span><span class="val">' + txt_ic2 + ' | stab ' + str(s2) + '</span></div>'
+        html += '</div>'
+
+    if sport == "basketball":
         html += '<div class="box"><h2>Points attendus (mu)</h2>'
         html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val">' + str(r["mu_home"]) + '</span></div>'
         html += '<div class="ligne"><span class="label">' + eq_ext + '</span><span class="val">' + str(r["mu_away"]) + '</span></div>'
@@ -421,6 +453,7 @@ async def analyser(request: Request):
         html += '<div class="ligne"><span class="label">Fatigue / B2B</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
         html += '</div>'
 
+
     else:
         html += '<div class="box"><h2>Buts attendus (lambda)</h2>'
         html += '<div class="ligne"><span class="label">' + eq_dom + ' (total)</span><span class="val">' + str(r["lambda_home"]) + '</span></div>'
@@ -482,19 +515,7 @@ async def analyser(request: Request):
         html += '<h2 style="text-align:left;">Detail - Over / Under</h2>'
         if r["ou_resultats"]:
             for o in r["ou_resultats"]:
-                ec = "#4ade80" if o["ev"] >= 0 else "#ef4444"
-                st = "PASSE" if o["passe_filtres"] else "REJETE"
-                rh = "" if o["passe_filtres"] else "".join(['<div class="ligne"><span class="label" style="color:#ef4444;font-size:12px;">-> ' + x + '</span></div>' for x in o["raisons_rejet"]])
-                html += '<div class="box">'
-                html += '<div class="ligne"><span class="label">Marche</span><span class="val">' + o["type"] + ' ' + str(o["ligne"]) + '</span></div>'
-                html += '<div class="ligne"><span class="label">P(gain) / P(remb.)</span><span class="val">' + str(round(o["p_brute"] * 100, 1)) + '% / ' + str(round(o["p_remb"] * 100, 1)) + '%</span></div>'
-                html += '<div class="ligne"><span class="label">P(effective)</span><span class="val">' + str(round(o["p"] * 100, 2)) + '%</span></div>'
-                html += '<div class="ligne"><span class="label">Cote</span><span class="val">' + str(o["cote"]) + '</span></div>'
-                html += '<div class="ligne"><span class="label">EV net</span><span class="val" style="color:' + ec + ';">' + str(round(o["ev"] * 100, 2)) + '%</span></div>'
-                html += '<div class="ligne"><span class="label">Fiabilite</span><span class="val">' + str(o["fiabilite"]) + '</span></div>'
-                html += '<div class="ligne"><span class="label">Filtres</span><span class="val">' + st + '</span></div>'
-                html += rh
-                html += '</div>'
+                html += bloc_candidat(o)
         else:
             html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun O/U saisi.</p></div>'
 
