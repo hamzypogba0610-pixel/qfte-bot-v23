@@ -1,7 +1,7 @@
 import json
 import re
 from datetime import datetime
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Form
 
 
 def parse_matchs(t):
@@ -150,3 +150,24 @@ async def page_basketball(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "V23.0"}
+
+
+
+@app.post("/analyser", response_class=HTMLResponse)
+async def analyser(request: Request):
+    form = await request.form()
+
+    sport = form.get("sport", "football")
+    competition = form.get("competition", "")
+    eq_dom = form.get("equipe_domicile", "")
+    eq_ext = form.get("equipe_exterieur", "")
+
+    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recu</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+    html += '<h1 style="color:#ffcc00;">Donnees recues</h1>'
+    html += '<p>Sport : ' + sport + '</p>'
+    html += '<p>Competition : ' + competition + '</p>'
+    html += '<p>Domicile : ' + eq_dom + '</p>'
+    html += '<p>Exterieur : ' + eq_ext + '</p>'
+    html += '<p><a href="/" style="color:#ffcc00;">Retour</a></p>'
+    html += '</body></html>'
+    return HTMLResponse(content=html)
