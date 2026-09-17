@@ -3,6 +3,11 @@ import re
 from datetime import datetime
 from fastapi import FastAPI, Request, Form
 from qfte_engine.mvp import analyser_match_football
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+app = FastAPI(title="QFTE Bot V23.0")
+templates = Jinja2Templates(directory="templates")
 
 
 def parse_matchs(t):
@@ -126,11 +131,6 @@ def fopt(form, k):
         return float(v)
     except:
         return None
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-
-app = FastAPI(title="QFTE Bot V23.0")
-templates = Jinja2Templates(directory="templates")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -153,79 +153,76 @@ async def health():
     return {"status": "ok", "version": "V23.0"}
 
 
-
-
- @app.post("/analyser", response_class=HTMLResponse)
+@app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
     form = await request.form()
 
-sport = form.get("sport", "football")
-ligue = form.get("ligue", "autre")
-competition = form.get("competition", "")
-eq_dom = form.get("equipe_domicile", "")
-eq_ext = form.get("equipe_exterieur", "")
+    sport = form.get("sport", "football")
+    ligue = form.get("ligue", "autre")
+    competition = form.get("competition", "")
+    eq_dom = form.get("equipe_domicile", "")
+    eq_ext = form.get("equipe_exterieur", "")
 
-home_ctx = parse_matchs(form.get("home_contextuel", ""))
-home_glob = parse_matchs(form.get("home_global", ""))
-away_ctx = parse_matchs(form.get("away_contextuel", ""))
-away_glob = parse_matchs(form.get("away_global", ""))
-h2h = parse_matchs(form.get("h2h", ""))
-hcp_lignes = parse_hcp(form.get("handicap", ""))
-ou_lignes = parse_ou(form.get("ou_buts", ""))
+    home_ctx = parse_matchs(form.get("home_contextuel", ""))
+    home_glob = parse_matchs(form.get("home_global", ""))
+    away_ctx = parse_matchs(form.get("away_contextuel", ""))
+    away_glob = parse_matchs(form.get("away_global", ""))
+    h2h = parse_matchs(form.get("h2h", ""))
+    hcp_lignes = parse_hcp(form.get("handicap", ""))
+    ou_lignes = parse_ou(form.get("ou_buts", ""))
 
-o1 = ff(form, "open_1")
-ox = ff(form, "open_x")
-o2 = ff(form, "open_2")
-c1 = ff(form, "curr_1")
-cx = ff(form, "curr_x")
-c2 = ff(form, "curr_2")
+    o1 = ff(form, "open_1")
+    ox = ff(form, "open_x")
+    o2 = ff(form, "open_2")
+    c1 = ff(form, "curr_1")
+    cx = ff(form, "curr_x")
+    c2 = ff(form, "curr_2")
 
-pd = fi(form, "pos_dom")
-pe = fi(form, "pos_ext")
-te = fi(form, "total_equipes")
+    pd = fi(form, "pos_dom")
+    pe = fi(form, "pos_ext")
+    te = fi(form, "total_equipes")
 
-if sport == "football":
-    r = analyser_match_football(
-        home_ctx, home_glob, away_ctx, away_glob,
-        o1, ox, o2, c1, cx, c2,
-        "normale", "normal",
-        False, False, False, False,
-        h2h, hcp_lignes, ou_lignes,
-        pd, pe, te,
-        None, None,
-        ligue
-    )
+    if sport == "football":
+        r = analyser_match_football(
+            home_ctx, home_glob, away_ctx, away_glob,
+            o1, ox, o2, c1, cx, c2,
+            "normale", "normal",
+            False, False, False, False,
+            h2h, hcp_lignes, ou_lignes,
+            pd, pe, te,
+            None, None,
+            ligue
+        )
 
-    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
-    html += '<h1 style="color:#ffcc00;">Analyse Football</h1>'
-    html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
+        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+        html += '<h1 style="color:#ffcc00;">Analyse Football</h1>'
+        html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
 
-    p = r.get("pari_retenu")
-    if p:
-        html += '<h2 style="color:#4ade80;">PARI RETENU</h2>'
-        html += '<p>Selection : ' + p["selection"] + '</p>'
-        html += '<p>Cote : ' + str(p["cote"]) + '</p>'
-        html += '<p>Probabilite : ' + str(round(p["p"] * 100, 2)) + '%</p>'
-        html += '<p>EV : ' + str(round(p["ev"] * 100, 2)) + '%</p>'
-        html += '<p>Fiabilite : ' + str(p["fiabilite"]) + '</p>'
+        p = r.get("pari_retenu")
+        if p:
+            html += '<h2 style="color:#4ade80;">PARI RETENU</h2>'
+            html += '<p>Selection : ' + p["selection"] + '</p>'
+            html += '<p>Cote : ' + str(p["cote"]) + '</p>'
+            html += '<p>Probabilite : ' + str(round(p["p"] * 100, 2)) + '%</p>'
+            html += '<p>EV : ' + str(round(p["ev"] * 100, 2)) + '%</p>'
+            html += '<p>Fiabilite : ' + str(p["fiabilite"]) + '</p>'
+        else:
+            html += '<h2 style="color:#ef4444;">AUCUN PARI RETENU</h2>'
+
+        html += '<h2>Probabilites 1X2</h2>'
+        html += '<p>P(1) : ' + str(round(r["p1"] * 100, 2)) + '%</p>'
+        html += '<p>P(X) : ' + str(round(r["px"] * 100, 2)) + '%</p>'
+        html += '<p>P(2) : ' + str(round(r["p2"] * 100, 2)) + '%</p>'
+
+        html += '<p><a href="/football" style="color:#ffcc00;">Retour</a></p>'
+        html += '</body></html>'
+        return HTMLResponse(content=html)
+
     else:
-        html += '<h2 style="color:#ef4444;">AUCUN PARI RETENU</h2>'
-
-    html += '<h2>Probabilites 1X2</h2>'
-    html += '<p>P(1) : ' + str(round(r["p1"] * 100, 2)) + '%</p>'
-    html += '<p>P(X) : ' + str(round(r["px"] * 100, 2)) + '%</p>'
-    html += '<p>P(2) : ' + str(round(r["p2"] * 100, 2)) + '%</p>'
-
-    html += '<p><a href="/football" style="color:#ffcc00;">Retour</a></p>'
-    html += '</body></html>'
-    return HTMLResponse(content=html)
-
-else:
-    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Basket</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
-    html += '<h1 style="color:#ffcc00;">Basketball (moteur a venir)</h1>'
-    html += '<p>Sport : ' + sport + '</p>'
-    html += '<p>Competition : ' + competition + '</p>'
-    html += '<p><a href="/" style="color:#ffcc00;">Retour</a></p>'
-    html += '</body></html>'
-    return HTMLResponse(content=html)
-    return HTMLResponse(content=html)
+        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Basket</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+        html += '<h1 style="color:#ffcc00;">Basketball (moteur a venir)</h1>'
+        html += '<p>Sport : ' + sport + '</p>'
+        html += '<p>Competition : ' + competition + '</p>'
+        html += '<p><a href="/" style="color:#ffcc00;">Retour</a></p>'
+        html += '</body></html>'
+        return HTMLResponse(content=html)
