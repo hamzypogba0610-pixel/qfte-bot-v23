@@ -597,7 +597,7 @@ def analyser_match_football(
     ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
     forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
     
-    regime = analyser_regime(forensics)
+    regime = {"disponible": False, "regime": "INCONNU"}
 
     forensics_sharpe = 0.0
     if forensics and forensics.get("disponible"):
