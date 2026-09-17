@@ -2,20 +2,17 @@
 qfte_engine/mvp.py
 ------------------
 Moteur QFTE V23.0 - Football
-1X2 + Handicap + O/U + 2 mi-temps + Divergences + QFTE SIGNATURE FOOT.
-
-Signature Foot :
-- Correction Dixon-Coles
-- Calibration bayesienne du lambda
-- Monte Carlo 10 000 simulations
-- Intervalles de confiance 95%
-- Score de stabilite
+1X2 + Handicap + O/U + 2 mi-temps + Divergences + QFTE SIGNATURE FOOT + MARKET FORENSICS.
 """
 
 import math
 from qfte_engine.signature_foot import (
     analyser_signature_foot,
     calculer_over_under_avec_ic,
+)
+from qfte_engine.forensics import (
+    analyser_market_forensics,
+    ajuster_fiabilite,
 )
 
 
@@ -236,6 +233,38 @@ def eval_candidat_simple(label, p, cote, marche=None):
     }
 
 
+def appliquer_forensics_au_candidat(c, forensics):
+    """Ajuste la fiabilite d'un candidat selon le Sharpe Signal."""
+    if not forensics or not forensics.get("disponible"):
+        c["fiabilite_origine"] = c["fiabilite"]
+        c["ajustement_forensics"] = 0.0
+        c["sharpe_signal"] = None
+        return c
+
+    sharpe = forensics["sharpe_signal"]
+    fiab_origine = c["fiabilite"]
+    fiab_ajustee = ajuster_fiabilite(fiab_origine, sharpe)
+    ajustement = round(fiab_ajustee - fiab_origine, 3)
+
+    c["fiabilite_origine"] = fiab_origine
+    c["fiabilite"] = fiab_ajustee
+    c["ajustement_forensics"] = ajustement
+    c["sharpe_signal"] = sharpe["sharpe_signal"]
+
+    # Re-classifier selon la nouvelle fiabilite
+    dec, niv = classify_decision(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+
+    # Re-appliquer les filtres
+    passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = passe
+    c["raisons_rejet"] = raisons
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+
+    return c
+
+
 def calcul_handicap_complet(matrix, handicap_lignes):
     resultats = []
     for ligne in handicap_lignes:
@@ -265,7 +294,6 @@ def calcul_handicap_complet(matrix, handicap_lignes):
 
 
 def calcul_ou_complet_from_signature(signature_result, ou_lignes):
-    """Utilise les probas Monte Carlo pour O/U."""
     resultats = []
     for l in ou_lignes:
         ligne = l.get("ligne")
@@ -409,7 +437,7 @@ def analyser_match_football(
         ou_lignes = []
 
     # ========================================
-    # LAMBDA BRUT (Poisson simple, comme avant)
+    # LAMBDA BRUT
     # ========================================
     hbp_ctx = moy([m["bp"] for m in home_ctx])
     hbc_ctx = moy([m["bc"] for m in home_ctx])
@@ -429,7 +457,7 @@ def analyser_match_football(
     lh_brut = (hbp + abc) / 2.0
     la_brut = (abp + hbc) / 2.0
 
-    # Ajustements contextuels (appliques sur le brut avant bayesien)
+    # Ajustements contextuels
     fht_h = facteur_ht(home_ctx); fht_a = facteur_ht(away_ctx)
     lh_brut *= fht_h; la_brut *= fht_a
 
@@ -464,6 +492,11 @@ def analyser_match_football(
 
     p1, px, p2 = compute_1x2(matrix)
 
+    # ========================================
+    # MARKET FORENSICS
+    # ========================================
+    forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
+
     ev1 = compute_ev(p1, curr_1)
     evx = compute_ev(px, curr_x) if curr_x > 0 else -1.0
     ev2 = compute_ev(p2, curr_2)
@@ -482,9 +515,17 @@ def analyser_match_football(
         dec, niv = classify_decision(c["fiabilite"], c["ev"])
         c["decision"] = dec; c["niveau"] = niv
         c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+        # Appliquer forensics
+        appliquer_forensics_au_candidat(c, forensics)
 
     handicap_resultats = calcul_handicap_complet(matrix, handicap_lignes)
     ou_resultats = calcul_ou_complet_from_signature(signature, ou_lignes)
+
+    # Appliquer forensics aux handicaps et O/U
+    for h in handicap_resultats:
+        appliquer_forensics_au_candidat(h, forensics)
+    for o in ou_resultats:
+        appliquer_forensics_au_candidat(o, forensics)
 
     ratio_ht_h = compute_ratio_ht(home_ctx)
     ratio_ht_a = compute_ratio_ht(away_ctx)
@@ -493,6 +534,12 @@ def analyser_match_football(
     lambda_2h_h = lh * (1 - ratio_ht_h)
     lambda_2h_a = la * (1 - ratio_ht_a)
     marches_2mt = calcul_marches_2mt(lambda_ht_h, lambda_ht_a, lambda_2h_h, lambda_2h_a, cotes_ht, cotes_2h)
+
+    # Appliquer forensics aux marches 2MT
+    for c in marches_2mt.get("ht", []):
+        appliquer_forensics_au_candidat(c, forensics)
+    for c in marches_2mt.get("2h", []):
+        appliquer_forensics_au_candidat(c, forensics)
 
     tous = list(candidats)
     for h in handicap_resultats:
@@ -547,9 +594,6 @@ def analyser_match_football(
         "f_bless_dom": facteur_blessures(blessures_dom), "f_bless_ext": facteur_blessures(blessures_ext),
         "f_fatigue_dom": facteur_fatigue(fatigue_dom), "f_fatigue_ext": facteur_fatigue(fatigue_ext),
         "f_commun": round(fcomm, 3),
-        "sigma_ft": None,
-        "sigma_mt": None,
-        "sigma_quart": None,
     }
 
     return {
@@ -576,6 +620,7 @@ def analyser_match_football(
             "p_btts_oui_dc": signature["p_btts_oui_dc"],
             "p_btts_non_dc": signature["p_btts_non_dc"],
         },
+        "forensics": forensics,
         "p1": round(p1, 4), "px": round(px, 4), "p2": round(p2, 4),
         "ev1": round(ev1, 4), "evx": round(evx, 4), "ev2": round(ev2, 4),
         "f1": f1, "fx": fx, "f2": f2,
@@ -587,4 +632,4 @@ def analyser_match_football(
         "pari_retenu": pari_retenu,
         "top_3_scores": top_3,
         "divergences": divergences,
-            }
+    }
