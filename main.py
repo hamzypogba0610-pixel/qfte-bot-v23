@@ -491,253 +491,255 @@ async def analyser(request: Request):
         html += bloc_forensics(r["forensics"])
 
 
-    if sport == "basketball" and r.get("signature"):
-        sig = r["signature"]
-        if sig["niveau_alerte"] == "ELEVEE":
-            couleur_alerte = "#ef4444"
-        elif sig["niveau_alerte"] == "ATTENTION":
-            couleur_alerte = "#eab308"
-        else:
-            couleur_alerte = "#4ade80"
-
-        def couleur_cons(c):
-            if c is None:
-                return "#666"
-            if c >= 0.75:
-                return "#4ade80"
-            elif c >= 0.50:
-                return "#eab308"
-            else:
-                return "#ef4444"
-
-        html += '<div class="box" style="border:2px solid #a855f7;background:#1a0f2a;">'
-        html += '<h2 style="color:#a855f7;">🔬 QFTE SIGNATURE — True Sigma</h2>'
-        html += '<div class="ligne"><span class="label">Methode</span><span class="val">' + sig["methode"].upper() + '</span></div>'
-        html += '<div class="ligne"><span class="label">Sigma ligue (' + ligue.upper() + ')</span><span class="val">' + str(sig["sigma_ligue"]) + '</span></div>'
-        if sig["sigma_dom"] is not None:
-            html += '<div class="ligne"><span class="label">Sigma reel dom.</span><span class="val">' + str(sig["sigma_dom"]) + '</span></div>'
-        if sig["sigma_ext"] is not None:
-            html += '<div class="ligne"><span class="label">Sigma reel ext.</span><span class="val">' + str(sig["sigma_ext"]) + '</span></div>'
-        if sig["sigma_match"] is not None:
-            html += '<div class="ligne"><span class="label">Sigma match</span><span class="val">' + str(sig["sigma_match"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">⭐ Sigma final</span><span class="val" style="color:#a855f7;">' + str(sig["sigma_final"]) + '</span></div>'
-        html += '</div>'
-
-        html += '<div class="box" style="background:#0f1a0f;border-color:#4ade80;">'
-        html += '<h2 style="color:#4ade80;">📊 Indice de Consistance</h2>'
-        c_dom = sig["consistance_dom"]
-        c_ext = sig["consistance_ext"]
-        col_dom = couleur_cons(c_dom)
-        col_ext = couleur_cons(c_ext)
-        dom_txt = str(c_dom) if c_dom is not None else "N/A"
-        ext_txt = str(c_ext) if c_ext is not None else "N/A"
-        html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val" style="color:' + col_dom + ';">' + dom_txt + ' (' + sig["label_consistance_dom"] + ')</span></div>'
-        html += '<div class="ligne"><span class="label">' + eq_ext + '</span><span class="val" style="color:' + col_ext + ';">' + ext_txt + ' (' + sig["label_consistance_ext"] + ')</span></div>'
-        html += '</div>'
-
-        html += '<div class="box" style="border-left:4px solid ' + couleur_alerte + ';background:#1a0f0f;padding-left:10px;">'
-        html += '<h2 style="color:' + couleur_alerte + ';">⚠️ Alerte Volatilite</h2>'
-        html += '<div class="ligne"><span class="label">Niveau</span><span class="val" style="color:' + couleur_alerte + ';">' + sig["niveau_alerte"] + '</span></div>'
-        html += '<div class="ligne"><span class="label">Ratio</span><span class="val">' + str(sig["ratio_volatilite"]) + 'x</span></div>'
-        html += '<div class="ligne"><span class="label">Multiplicateur stake</span><span class="val">x' + str(sig["multiplicateur_stake"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + sig["message_alerte"] + '</span></div>'
-        html += '</div>'
-
-    if sport == "football" and r.get("signature"):
-        sigf = r["signature"]
-        html += '<div class="box" style="border:2px solid #f59e0b;background:#1a150a;">'
-        html += '<h2 style="color:#f59e0b;">🔬 QFTE SIGNATURE FOOT — Temporal Bayesian Dixon-Coles</h2>'
-        html += '<div class="ligne"><span class="label">Methode</span><span class="val">' + sigf["methode"] + '</span></div>'
-        html += '<div class="ligne"><span class="label">Prior ligue</span><span class="val">' + str(sigf["prior_ligue"]) + ' buts/match</span></div>'
-        html += '<div class="ligne"><span class="label">Lambda dom brut -> bayesien</span><span class="val">' + str(sigf["lambda_home_brut"]) + ' -> ' + str(sigf["lambda_home_bayesien"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Lambda ext brut -> bayesien</span><span class="val">' + str(sigf["lambda_away_brut"]) + ' -> ' + str(sigf["lambda_away_bayesien"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Rho Dixon-Coles</span><span class="val">' + str(sigf["rho"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Simulations MC</span><span class="val">' + str(sigf["n_simulations"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">BTTS Oui (DC)</span><span class="val">' + str(round(sigf["p_btts_oui_dc"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">BTTS Non (DC)</span><span class="val">' + str(round(sigf["p_btts_non_dc"] * 100, 2)) + '%</span></div>'
-        html += '</div>'
-
-        html += '<div class="box" style="background:#0f1a15;border-color:#4ade80;">'
-        html += '<h2 style="color:#4ade80;">📊 IC 95% + Stabilite (Monte Carlo)</h2>'
-        ic1 = sigf["ic_p1"]
-        icx = sigf["ic_px"]
-        ic2 = sigf["ic_p2"]
-        s1 = sigf["stab_p1"]
-        sx = sigf["stab_px"]
-        s2 = sigf["stab_p2"]
-        if ic1 and ic1[0] is not None:
-            txt_ic1 = '[' + str(round(ic1[0] * 100, 1)) + '% - ' + str(round(ic1[1] * 100, 1)) + '%]'
-        else:
-            txt_ic1 = "N/A"
-        if icx and icx[0] is not None:
-            txt_icx = '[' + str(round(icx[0] * 100, 1)) + '% - ' + str(round(icx[1] * 100, 1)) + '%]'
-        else:
-            txt_icx = "N/A"
-        if ic2 and ic2[0] is not None:
-            txt_ic2 = '[' + str(round(ic2[0] * 100, 1)) + '% - ' + str(round(ic2[1] * 100, 1)) + '%]'
-        else:
-            txt_ic2 = "N/A"
-        html += '<div class="ligne"><span class="label">P(1)</span><span class="val">' + txt_ic1 + ' | stab ' + str(s1) + '</span></div>'
-        html += '<div class="ligne"><span class="label">P(X)</span><span class="val">' + txt_icx + ' | stab ' + str(sx) + '</span></div>'
-        html += '<div class="ligne"><span class="label">P(2)</span><span class="val">' + txt_ic2 + ' | stab ' + str(s2) + '</span></div>'
-        html += '</div>'
-
-    if sport == "basketball":
-        html += '<div class="box"><h2>Points attendus (mu)</h2>'
-        html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val">' + str(r["mu_home"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">' + eq_ext + '</span><span class="val">' + str(r["mu_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Total FT</span><span class="val">' + str(r["mu_total"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Total 1H</span><span class="val">' + str(r["mu_total_1h"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Total 2H</span><span class="val">' + str(r["mu_total_2h"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Ligue</span><span class="val">' + ligue.upper() + '</span></div>'
-        html += '</div>'
-
-        html += '<h2 style="text-align:left;">Detail - Moneyline</h2>'
-        if r["ml_candidats"]:
-            for c in r["ml_candidats"]:
-                html += bloc_candidat(c)
-        else:
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote ML saisie.</p></div>'
-
-        html += '<h2 style="text-align:left;">Detail - Spread</h2>'
-        if r["spread_candidats"]:
-            for c in r["spread_candidats"]:
-                html += bloc_candidat(c)
-        else:
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun spread saisi.</p></div>'
-
-        html += '<h2 style="text-align:left;">Detail - Total Points FT</h2>'
-        if r["total_ft_candidats"]:
-            for c in r["total_ft_candidats"]:
-                html += bloc_candidat(c)
-        else:
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun total FT saisi.</p></div>'
-
-        html += '<h2 style="text-align:left;">Detail - 1ere Mi-temps (1H)</h2>'
-        if r["ml_1h_candidats"]:
-            for c in r["ml_1h_candidats"]:
-                html += bloc_candidat(c)
-        if r["total_1h_candidats"]:
-            for c in r["total_1h_candidats"]:
-                html += bloc_candidat(c)
-        if not r["ml_1h_candidats"] and not r["total_1h_candidats"]:
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 1H saisie.</p></div>'
-
-        html += '<h2 style="text-align:left;">Detail - 2eme Mi-temps (2H)</h2>'
-        if r["ml_2h_candidats"]:
-            for c in r["ml_2h_candidats"]:
-                html += bloc_candidat(c)
-        if r["total_2h_candidats"]:
-            for c in r["total_2h_candidats"]:
-                html += bloc_candidat(c)
-        if not r["ml_2h_candidats"] and not r["total_2h_candidats"]:
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 2H saisie.</p></div>'
-
-        for nom_q in ["Q1", "Q2", "Q3", "Q4"]:
-            qd = r["quarts"][nom_q]
-            html += '<h2 style="text-align:left;">Detail - ' + nom_q + '</h2>'
-            if qd.get("mu"):
-                html += '<div class="box"><div class="ligne"><span class="label">Mu total ' + nom_q + '</span><span class="val">' + str(qd["mu"]) + '</span></div></div>'
-            if qd["total"]:
-                for c in qd["total"]:
-                    html += bloc_candidat(c)
-            if qd["ml"]:
-                for c in qd["ml"]:
-                    html += bloc_candidat(c)
-            if not qd["total"] and not qd["ml"]:
-                html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote ' + nom_q + ' saisie.</p></div>'
-
-        d = r["details"]
-        html += '<div class="box"><h2>Ajustements appliques</h2>'
-        html += '<div class="ligne"><span class="label">BP dom (ctx/glob)</span><span class="val">' + str(d["home_bp_ctx"]) + ' / ' + str(d["home_bp_glob"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">BP ext (ctx/glob)</span><span class="val">' + str(d["away_bp_ctx"]) + ' / ' + str(d["away_bp_glob"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Mu base dom / ext</span><span class="val">' + str(d["mu_home_base"]) + ' / ' + str(d["mu_away_base"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Pace applique</span><span class="val">' + ("Oui" if d["pace_applique"] else "Non") + '</span></div>'
-        html += '<div class="ligne"><span class="label">Facteur classement</span><span class="val">' + str(d["f_class_home"]) + ' / ' + str(d["f_class_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Facteur H2H</span><span class="val">' + str(d["f_h2h_home"]) + ' / ' + str(d["f_h2h_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Blessures</span><span class="val">' + str(d["f_bless_dom"]) + ' / ' + str(d["f_bless_ext"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Fatigue / B2B</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
-        html += '</div>'
-
+if sport == "basketball" and r.get("signature"):
+    sig = r["signature"]
+    if sig["niveau_alerte"] == "ELEVEE":
+        couleur_alerte = "#ef4444"
+    elif sig["niveau_alerte"] == "ATTENTION":
+        couleur_alerte = "#eab308"
     else:
-        html += '<div class="box"><h2>Buts attendus (lambda)</h2>'
-        html += '<div class="ligne"><span class="label">' + eq_dom + ' (total)</span><span class="val">' + str(r["lambda_home"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">' + eq_ext + ' (total)</span><span class="val">' + str(r["lambda_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">' + eq_dom + ' (HT)</span><span class="val">' + str(r["lambda_ht_home"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">' + eq_ext + ' (HT)</span><span class="val">' + str(r["lambda_ht_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">' + eq_dom + ' (2H)</span><span class="val">' + str(r["lambda_2h_home"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">' + eq_ext + ' (2H)</span><span class="val">' + str(r["lambda_2h_away"]) + '</span></div>'
-        html += '</div>'
+        couleur_alerte = "#4ade80"
 
-        html += '<div class="box"><h2>Probabilites 1X2 (stackees)</h2>'
-        html += '<div class="ligne"><span class="label">1</span><span class="val">' + str(round(r["p1"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">X</span><span class="val">' + str(round(r["px"] * 100, 2)) + '%</span></div>'
-        html += '<div class="ligne"><span class="label">2</span><span class="val">' + str(round(r["p2"] * 100, 2)) + '%</span></div>'
-        html += '</div>'
-
-        html += '<div class="box"><h2>Top 3 scores probables</h2>'
-        for s in r["top_3_scores"]:
-            html += '<div class="ligne"><span class="label">#' + str(s["rank"]) + '</span><span class="val">' + s["score"] + ' - ' + str(round(s["probability"] * 100, 2)) + '%</span></div>'
-        html += '</div>'
-
-        html += '<h2 style="text-align:left;">Divergences detectees</h2>'
-        if r.get("divergences"):
-            for dd in r["divergences"]:
-                color = "#ef4444" if dd["niveau"] == "MAJEUR" else "#eab308"
-                html += '<div class="box" style="border-left:4px solid ' + color + ';padding-left:10px;">'
-                html += '<div class="ligne"><span class="label">Marche</span><span class="val">' + dd["marche"] + '</span></div>'
-                html += '<div class="ligne"><span class="label">P_modele / P_marche</span><span class="val">' + str(round(dd["p_modele"] * 100, 1)) + '% / ' + str(round(dd["p_marche"] * 100, 1)) + '%</span></div>'
-                html += '<div class="ligne"><span class="label">Ecart</span><span class="val" style="color:' + color + ';">' + str(round(dd["ecart"] * 100, 1)) + '%</span></div>'
-                html += '<div class="ligne"><span class="label">Niveau</span><span class="val" style="color:' + color + ';">' + dd["niveau"] + '</span></div>'
-                html += '<div class="ligne"><span class="label" style="font-size:12px;">' + dd["interpretation"] + '</span></div>'
-                html += '</div>'
+    def couleur_cons(c):
+        if c is None:
+            return "#666"
+        if c >= 0.75:
+            return "#4ade80"
+        elif c >= 0.50:
+            return "#eab308"
         else:
-            html += '<div class="box"><p style="color:#4ade80;font-size:13px;">Aucune divergence majeure.</p></div>'
+            return "#ef4444"
 
-        html += '<h2 style="text-align:left;">Detail - 1X2</h2>'
-        for c in r["candidats"]:
+    html += '<div class="box" style="border:2px solid #a855f7;background:#1a0f2a;">'
+    html += '<h2 style="color:#a855f7;">🔬 QFTE SIGNATURE — True Sigma</h2>'
+    html += '<div class="ligne"><span class="label">Methode</span><span class="val">' + sig["methode"].upper() + '</span></div>'
+    html += '<div class="ligne"><span class="label">Sigma ligue (' + ligue.upper() + ')</span><span class="val">' + str(sig["sigma_ligue"]) + '</span></div>'
+    if sig["sigma_dom"] is not None:
+        html += '<div class="ligne"><span class="label">Sigma reel dom.</span><span class="val">' + str(sig["sigma_dom"]) + '</span></div>'
+    if sig["sigma_ext"] is not None:
+        html += '<div class="ligne"><span class="label">Sigma reel ext.</span><span class="val">' + str(sig["sigma_ext"]) + '</span></div>'
+    if sig["sigma_match"] is not None:
+        html += '<div class="ligne"><span class="label">Sigma match</span><span class="val">' + str(sig["sigma_match"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">⭐ Sigma final</span><span class="val" style="color:#a855f7;">' + str(sig["sigma_final"]) + '</span></div>'
+    html += '</div>'
+
+    html += '<div class="box" style="background:#0f1a0f;border-color:#4ade80;">'
+    html += '<h2 style="color:#4ade80;">📊 Indice de Consistance</h2>'
+    c_dom = sig["consistance_dom"]
+    c_ext = sig["consistance_ext"]
+    col_dom = couleur_cons(c_dom)
+    col_ext = couleur_cons(c_ext)
+    dom_txt = str(c_dom) if c_dom is not None else "N/A"
+    ext_txt = str(c_ext) if c_ext is not None else "N/A"
+    html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val" style="color:' + col_dom + ';">' + dom_txt + ' (' + sig["label_consistance_dom"] + ')</span></div>'
+    html += '<div class="ligne"><span class="label">' + eq_ext + '</span><span class="val" style="color:' + col_ext + ';">' + ext_txt + ' (' + sig["label_consistance_ext"] + ')</span></div>'
+    html += '</div>'
+
+    html += '<div class="box" style="border-left:4px solid ' + couleur_alerte + ';background:#1a0f0f;padding-left:10px;">'
+    html += '<h2 style="color:' + couleur_alerte + ';">⚠️ Alerte Volatilite</h2>'
+    html += '<div class="ligne"><span class="label">Niveau</span><span class="val" style="color:' + couleur_alerte + ';">' + sig["niveau_alerte"] + '</span></div>'
+    html += '<div class="ligne"><span class="label">Ratio</span><span class="val">' + str(sig["ratio_volatilite"]) + 'x</span></div>'
+    html += '<div class="ligne"><span class="label">Multiplicateur stake</span><span class="val">x' + str(sig["multiplicateur_stake"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label" style="font-size:12px;color:#ccc;">' + sig["message_alerte"] + '</span></div>'
+    html += '</div>'
+
+if sport == "football" and r.get("signature"):
+    sigf = r["signature"]
+    html += '<div class="box" style="border:2px solid #f59e0b;background:#1a150a;">'
+    html += '<h2 style="color:#f59e0b;">🔬 QFTE SIGNATURE FOOT — Temporal Bayesian Dixon-Coles</h2>'
+    html += '<div class="ligne"><span class="label">Methode</span><span class="val">' + sigf["methode"] + '</span></div>'
+    html += '<div class="ligne"><span class="label">Prior ligue</span><span class="val">' + str(sigf["prior_ligue"]) + ' buts/match</span></div>'
+    html += '<div class="ligne"><span class="label">Lambda dom brut -> bayesien</span><span class="val">' + str(sigf["lambda_home_brut"]) + ' -> ' + str(sigf["lambda_home_bayesien"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Lambda ext brut -> bayesien</span><span class="val">' + str(sigf["lambda_away_brut"]) + ' -> ' + str(sigf["lambda_away_bayesien"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Rho Dixon-Coles</span><span class="val">' + str(sigf["rho"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Simulations MC</span><span class="val">' + str(sigf["n_simulations"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">BTTS Oui (DC)</span><span class="val">' + str(round(sigf["p_btts_oui_dc"] * 100, 2)) + '%</span></div>'
+    html += '<div class="ligne"><span class="label">BTTS Non (DC)</span><span class="val">' + str(round(sigf["p_btts_non_dc"] * 100, 2)) + '%</span></div>'
+    html += '</div>'
+
+    html += '<div class="box" style="background:#0f1a15;border-color:#4ade80;">'
+    html += '<h2 style="color:#4ade80;">📊 IC 95% + Stabilite (Monte Carlo)</h2>'
+    ic1 = sigf["ic_p1"]
+    icx = sigf["ic_px"]
+    ic2 = sigf["ic_p2"]
+    s1 = sigf["stab_p1"]
+    sx = sigf["stab_px"]
+    s2 = sigf["stab_p2"]
+    if ic1 and ic1[0] is not None:
+        txt_ic1 = '[' + str(round(ic1[0] * 100, 1)) + '% - ' + str(round(ic1[1] * 100, 1)) + '%]'
+    else:
+        txt_ic1 = "N/A"
+    if icx and icx[0] is not None:
+        txt_icx = '[' + str(round(icx[0] * 100, 1)) + '% - ' + str(round(icx[1] * 100, 1)) + '%]'
+    else:
+        txt_icx = "N/A"
+    if ic2 and ic2[0] is not None:
+        txt_ic2 = '[' + str(round(ic2[0] * 100, 1)) + '% - ' + str(round(ic2[1] * 100, 1)) + '%]'
+    else:
+        txt_ic2 = "N/A"
+    html += '<div class="ligne"><span class="label">P(1)</span><span class="val">' + txt_ic1 + ' | stab ' + str(s1) + '</span></div>'
+    html += '<div class="ligne"><span class="label">P(X)</span><span class="val">' + txt_icx + ' | stab ' + str(sx) + '</span></div>'
+    html += '<div class="ligne"><span class="label">P(2)</span><span class="val">' + txt_ic2 + ' | stab ' + str(s2) + '</span></div>'
+    html += '</div>'
+
+
+if sport == "basketball":
+    html += '<div class="box"><h2>Points attendus (mu)</h2>'
+    html += '<div class="ligne"><span class="label">' + eq_dom + '</span><span class="val">' + str(r["mu_home"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">' + eq_ext + '</span><span class="val">' + str(r["mu_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Total FT</span><span class="val">' + str(r["mu_total"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Total 1H</span><span class="val">' + str(r["mu_total_1h"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Total 2H</span><span class="val">' + str(r["mu_total_2h"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Ligue</span><span class="val">' + ligue.upper() + '</span></div>'
+    html += '</div>'
+
+    html += '<h2 style="text-align:left;">Detail - Moneyline</h2>'
+    if r["ml_candidats"]:
+        for c in r["ml_candidats"]:
             html += bloc_candidat(c)
+    else:
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote ML saisie.</p></div>'
 
-        html += '<h2 style="text-align:left;">Detail - Handicap</h2>'
-        if r["handicap_resultats"]:
-            for h in r["handicap_resultats"]:
-                html += bloc_candidat(h)
-        else:
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun handicap saisi.</p></div>'
+    html += '<h2 style="text-align:left;">Detail - Spread</h2>'
+    if r["spread_candidats"]:
+        for c in r["spread_candidats"]:
+            html += bloc_candidat(c)
+    else:
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun spread saisi.</p></div>'
 
-        html += '<h2 style="text-align:left;">Detail - Over / Under</h2>'
-        if r["ou_resultats"]:
-            for o in r["ou_resultats"]:
-                html += bloc_candidat(o)
-        else:
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun O/U saisi.</p></div>'
+    html += '<h2 style="text-align:left;">Detail - Total Points FT</h2>'
+    if r["total_ft_candidats"]:
+        for c in r["total_ft_candidats"]:
+            html += bloc_candidat(c)
+    else:
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun total FT saisi.</p></div>'
 
-        m2 = r["marches_2mt"]
-        html += '<h2 style="text-align:left;">Detail - 2 Mi-temps</h2>'
-        if m2.get("ht"):
-            html += '<div class="box"><div class="ligne"><span class="label">P 1 / X / 2 HT</span><span class="val">' + str(round(m2["p1_ht"] * 100, 1)) + '% / ' + str(round(m2["px_ht"] * 100, 1)) + '% / ' + str(round(m2["p2_ht"] * 100, 1)) + '%</span></div></div>'
-            for c in m2["ht"]:
+    html += '<h2 style="text-align:left;">Detail - 1ere Mi-temps (1H)</h2>'
+    if r["ml_1h_candidats"]:
+        for c in r["ml_1h_candidats"]:
+            html += bloc_candidat(c)
+    if r["total_1h_candidats"]:
+        for c in r["total_1h_candidats"]:
+            html += bloc_candidat(c)
+    if not r["ml_1h_candidats"] and not r["total_1h_candidats"]:
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 1H saisie.</p></div>'
+
+    html += '<h2 style="text-align:left;">Detail - 2eme Mi-temps (2H)</h2>'
+    if r["ml_2h_candidats"]:
+        for c in r["ml_2h_candidats"]:
+            html += bloc_candidat(c)
+    if r["total_2h_candidats"]:
+        for c in r["total_2h_candidats"]:
+            html += bloc_candidat(c)
+    if not r["ml_2h_candidats"] and not r["total_2h_candidats"]:
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 2H saisie.</p></div>'
+
+    for nom_q in ["Q1", "Q2", "Q3", "Q4"]:
+        qd = r["quarts"][nom_q]
+        html += '<h2 style="text-align:left;">Detail - ' + nom_q + '</h2>'
+        if qd.get("mu"):
+            html += '<div class="box"><div class="ligne"><span class="label">Mu total ' + nom_q + '</span><span class="val">' + str(qd["mu"]) + '</span></div></div>'
+        if qd["total"]:
+            for c in qd["total"]:
                 html += bloc_candidat(c)
-        if m2.get("2h"):
-            html += '<div class="box"><div class="ligne"><span class="label">P 1 / X / 2 2H</span><span class="val">' + str(round(m2["p1_2h"] * 100, 1)) + '% / ' + str(round(m2["px_2h"] * 100, 1)) + '% / ' + str(round(m2["p2_2h"] * 100, 1)) + '%</span></div></div>'
-            for c in m2["2h"]:
+        if qd["ml"]:
+            for c in qd["ml"]:
                 html += bloc_candidat(c)
-        if not m2.get("ht") and not m2.get("2h"):
-            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 2 mi-temps saisie.</p></div>'
+        if not qd["total"] and not qd["ml"]:
+            html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote ' + nom_q + ' saisie.</p></div>'
 
-        d = r["details"]
-        html += '<div class="box"><h2>Ajustements appliques</h2>'
-        html += '<div class="ligne"><span class="label">BP dom (ctx/glob)</span><span class="val">' + str(d["home_bp_ctx"]) + ' / ' + str(d["home_bp_glob"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">BP ext (ctx/glob)</span><span class="val">' + str(d["away_bp_ctx"]) + ' / ' + str(d["away_bp_glob"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Ratio HT</span><span class="val">' + str(d["ratio_ht_home"]) + ' / ' + str(d["ratio_ht_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Facteur HT</span><span class="val">' + str(d["f_ht_home"]) + ' / ' + str(d["f_ht_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Facteur forme</span><span class="val">' + str(d["f_forme_home"]) + ' / ' + str(d["f_forme_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Facteur classement</span><span class="val">' + str(d["f_class_home"]) + ' / ' + str(d["f_class_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Facteur H2H</span><span class="val">' + str(d["f_h2h_home"]) + ' / ' + str(d["f_h2h_away"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Meteo / Enjeu</span><span class="val">' + str(d["f_meteo"]) + ' / ' + str(d["f_enjeu"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Blessures</span><span class="val">' + str(d["f_bless_dom"]) + ' / ' + str(d["f_bless_ext"]) + '</span></div>'
-        html += '<div class="ligne"><span class="label">Fatigue</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
-        html += '</div>'
+    d = r["details"]
+    html += '<div class="box"><h2>Ajustements appliques</h2>'
+    html += '<div class="ligne"><span class="label">BP dom (ctx/glob)</span><span class="val">' + str(d["home_bp_ctx"]) + ' / ' + str(d["home_bp_glob"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">BP ext (ctx/glob)</span><span class="val">' + str(d["away_bp_ctx"]) + ' / ' + str(d["away_bp_glob"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Mu base dom / ext</span><span class="val">' + str(d["mu_home_base"]) + ' / ' + str(d["mu_away_base"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Pace applique</span><span class="val">' + ("Oui" if d["pace_applique"] else "Non") + '</span></div>'
+    html += '<div class="ligne"><span class="label">Facteur classement</span><span class="val">' + str(d["f_class_home"]) + ' / ' + str(d["f_class_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Facteur H2H</span><span class="val">' + str(d["f_h2h_home"]) + ' / ' + str(d["f_h2h_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Blessures</span><span class="val">' + str(d["f_bless_dom"]) + ' / ' + str(d["f_bless_ext"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Fatigue / B2B</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
+    html += '</div>'
+
+else:
+    html += '<div class="box"><h2>Buts attendus (lambda)</h2>'
+    html += '<div class="ligne"><span class="label">' + eq_dom + ' (total)</span><span class="val">' + str(r["lambda_home"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">' + eq_ext + ' (total)</span><span class="val">' + str(r["lambda_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">' + eq_dom + ' (HT)</span><span class="val">' + str(r["lambda_ht_home"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">' + eq_ext + ' (HT)</span><span class="val">' + str(r["lambda_ht_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">' + eq_dom + ' (2H)</span><span class="val">' + str(r["lambda_2h_home"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">' + eq_ext + ' (2H)</span><span class="val">' + str(r["lambda_2h_away"]) + '</span></div>'
+    html += '</div>'
+
+    html += '<div class="box"><h2>Probabilites 1X2 (stackees)</h2>'
+    html += '<div class="ligne"><span class="label">1</span><span class="val">' + str(round(r["p1"] * 100, 2)) + '%</span></div>'
+    html += '<div class="ligne"><span class="label">X</span><span class="val">' + str(round(r["px"] * 100, 2)) + '%</span></div>'
+    html += '<div class="ligne"><span class="label">2</span><span class="val">' + str(round(r["p2"] * 100, 2)) + '%</span></div>'
+    html += '</div>'
+
+    html += '<div class="box"><h2>Top 3 scores probables</h2>'
+    for s in r["top_3_scores"]:
+        html += '<div class="ligne"><span class="label">#' + str(s["rank"]) + '</span><span class="val">' + s["score"] + ' - ' + str(round(s["probability"] * 100, 2)) + '%</span></div>'
+    html += '</div>'
+
+    html += '<h2 style="text-align:left;">Divergences detectees</h2>'
+    if r.get("divergences"):
+        for dd in r["divergences"]:
+            color = "#ef4444" if dd["niveau"] == "MAJEUR" else "#eab308"
+            html += '<div class="box" style="border-left:4px solid ' + color + ';padding-left:10px;">'
+            html += '<div class="ligne"><span class="label">Marche</span><span class="val">' + dd["marche"] + '</span></div>'
+            html += '<div class="ligne"><span class="label">P_modele / P_marche</span><span class="val">' + str(round(dd["p_modele"] * 100, 1)) + '% / ' + str(round(dd["p_marche"] * 100, 1)) + '%</span></div>'
+            html += '<div class="ligne"><span class="label">Ecart</span><span class="val" style="color:' + color + ';">' + str(round(dd["ecart"] * 100, 1)) + '%</span></div>'
+            html += '<div class="ligne"><span class="label">Niveau</span><span class="val" style="color:' + color + ';">' + dd["niveau"] + '</span></div>'
+            html += '<div class="ligne"><span class="label" style="font-size:12px;">' + dd["interpretation"] + '</span></div>'
+            html += '</div>'
+    else:
+        html += '<div class="box"><p style="color:#4ade80;font-size:13px;">Aucune divergence majeure.</p></div>'
+
+    html += '<h2 style="text-align:left;">Detail - 1X2</h2>'
+    for c in r["candidats"]:
+        html += bloc_candidat(c)
+
+    html += '<h2 style="text-align:left;">Detail - Handicap</h2>'
+    if r["handicap_resultats"]:
+        for h in r["handicap_resultats"]:
+            html += bloc_candidat(h)
+    else:
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun handicap saisi.</p></div>'
+
+    html += '<h2 style="text-align:left;">Detail - Over / Under</h2>'
+    if r["ou_resultats"]:
+        for o in r["ou_resultats"]:
+            html += bloc_candidat(o)
+    else:
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucun O/U saisi.</p></div>'
+
+    m2 = r["marches_2mt"]
+    html += '<h2 style="text-align:left;">Detail - 2 Mi-temps</h2>'
+    if m2.get("ht"):
+        html += '<div class="box"><div class="ligne"><span class="label">P 1 / X / 2 HT</span><span class="val">' + str(round(m2["p1_ht"] * 100, 1)) + '% / ' + str(round(m2["px_ht"] * 100, 1)) + '% / ' + str(round(m2["p2_ht"] * 100, 1)) + '%</span></div></div>'
+        for c in m2["ht"]:
+            html += bloc_candidat(c)
+    if m2.get("2h"):
+        html += '<div class="box"><div class="ligne"><span class="label">P 1 / X / 2 2H</span><span class="val">' + str(round(m2["p1_2h"] * 100, 1)) + '% / ' + str(round(m2["px_2h"] * 100, 1)) + '% / ' + str(round(m2["p2_2h"] * 100, 1)) + '%</span></div></div>'
+        for c in m2["2h"]:
+            html += bloc_candidat(c)
+    if not m2.get("ht") and not m2.get("2h"):
+        html += '<div class="box"><p style="color:#666;font-size:13px;">Aucune cote 2 mi-temps saisie.</p></div>'
+
+    d = r["details"]
+    html += '<div class="box"><h2>Ajustements appliques</h2>'
+    html += '<div class="ligne"><span class="label">BP dom (ctx/glob)</span><span class="val">' + str(d["home_bp_ctx"]) + ' / ' + str(d["home_bp_glob"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">BP ext (ctx/glob)</span><span class="val">' + str(d["away_bp_ctx"]) + ' / ' + str(d["away_bp_glob"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Ratio HT</span><span class="val">' + str(d["ratio_ht_home"]) + ' / ' + str(d["ratio_ht_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Facteur HT</span><span class="val">' + str(d["f_ht_home"]) + ' / ' + str(d["f_ht_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Facteur forme</span><span class="val">' + str(d["f_forme_home"]) + ' / ' + str(d["f_forme_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Facteur classement</span><span class="val">' + str(d["f_class_home"]) + ' / ' + str(d["f_class_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Facteur H2H</span><span class="val">' + str(d["f_h2h_home"]) + ' / ' + str(d["f_h2h_away"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Meteo / Enjeu</span><span class="val">' + str(d["f_meteo"]) + ' / ' + str(d["f_enjeu"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Blessures</span><span class="val">' + str(d["f_bless_dom"]) + ' / ' + str(d["f_bless_ext"]) + '</span></div>'
+    html += '<div class="ligne"><span class="label">Fatigue</span><span class="val">' + str(d["f_fatigue_dom"]) + ' / ' + str(d["f_fatigue_ext"]) + '</span></div>'
+    html += '</div>'
+
 
     html += '<div style="text-align:center;margin:24px 0;">'
     html += '<button class="btn" onclick="sauvegarder()">Sauvegarder</button> '
@@ -752,7 +754,7 @@ async def analyser(request: Request):
     html += '}catch(e){alert("Erreur : "+e.message);}}</script>'
 
     html += '</body></html>'
-        return HTMLResponse(content=html)
+    return HTMLResponse(content=html)
 
 
 @app.get("/historique", response_class=HTMLResponse)
