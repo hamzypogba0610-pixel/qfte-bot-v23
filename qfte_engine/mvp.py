@@ -2,7 +2,7 @@
 qfte_engine/mvp.py
 ------------------
 Moteur QFTE V23.0 - Football
-1X2 + Handicap + O/U + 2 mi-temps + Divergences + QFTE SIGNATURE FOOT + MARKET FORENSICS.
+1X2 + Handicap + O/U + 2 mi-temps + Divergences + SIGNATURE FOOT + FORENSICS + STACKING.
 """
 
 import math
@@ -13,6 +13,10 @@ from qfte_engine.signature_foot import (
 from qfte_engine.forensics import (
     analyser_market_forensics,
     ajuster_fiabilite,
+)
+from qfte_engine.stacking import (
+    analyser_meta_ensemble,
+    ajuster_fiabilite_pcs,
 )
 
 
@@ -234,34 +238,48 @@ def eval_candidat_simple(label, p, cote, marche=None):
 
 
 def appliquer_forensics_au_candidat(c, forensics):
-    """Ajuste la fiabilite d'un candidat selon le Sharpe Signal."""
     if not forensics or not forensics.get("disponible"):
         c["fiabilite_origine"] = c["fiabilite"]
         c["ajustement_forensics"] = 0.0
         c["sharpe_signal"] = None
         return c
-
     sharpe = forensics["sharpe_signal"]
     fiab_origine = c["fiabilite"]
     fiab_ajustee = ajuster_fiabilite(fiab_origine, sharpe)
     ajustement = round(fiab_ajustee - fiab_origine, 3)
-
     c["fiabilite_origine"] = fiab_origine
     c["fiabilite"] = fiab_ajustee
     c["ajustement_forensics"] = ajustement
     c["sharpe_signal"] = sharpe["sharpe_signal"]
-
-    # Re-classifier selon la nouvelle fiabilite
     dec, niv = classify_decision(c["fiabilite"], c["ev"])
     c["decision"] = dec
     c["niveau"] = niv
-
-    # Re-appliquer les filtres
     passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
     c["passe_filtres"] = passe
     c["raisons_rejet"] = raisons
     c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+    return c
 
+
+def appliquer_stacking_au_candidat(c, stacking):
+    if not stacking or not stacking.get("disponible"):
+        c["pcs_label"] = None
+        c["ajustement_stacking"] = 0.0
+        return c
+    pcs = stacking["pcs"]
+    fiab_avant = c["fiabilite"]
+    fiab_apres = ajuster_fiabilite_pcs(fiab_avant, pcs)
+    ajustement = round(fiab_apres - fiab_avant, 3)
+    c["fiabilite"] = fiab_apres
+    c["pcs_label"] = pcs["label"]
+    c["ajustement_stacking"] = ajustement
+    dec, niv = classify_decision(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+    passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = passe
+    c["raisons_rejet"] = raisons
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
     return c
 
 
@@ -301,13 +319,11 @@ def calcul_ou_complet_from_signature(signature_result, ou_lignes):
         cote_under = l.get("cote_under")
         if ligne is None:
             continue
-
         data = calculer_over_under_avec_ic(signature_result, ligne)
         p_over = data["p_over"]
         p_under = data["p_under"]
         ic_over = data["ic_over"]
         stab = data["stabilite"]
-
         if cote_over and cote_over > 0:
             c = eval_candidat_simple("Over " + str(ligne), p_over, cote_over, "O/U")
             if c:
@@ -333,7 +349,6 @@ def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h
     matrix_2h = compute_score_matrix(lambda_2h_home, lambda_2h_away)
     p1_ht, px_ht, p2_ht = compute_1x2(matrix_ht)
     p1_2h, px_2h, p2_2h = compute_1x2(matrix_2h)
-
     if cotes_ht:
         for label, p, cote in [
             ("HT - 1 (Dom)", p1_ht, cotes_ht[0]),
@@ -343,7 +358,6 @@ def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h
             c = eval_candidat_simple(label, p, cote, "1X2 HT")
             if c:
                 resultats["ht"].append(c)
-
     if cotes_2h:
         for label, p, cote in [
             ("2H - 1 (Dom)", p1_2h, cotes_2h[0]),
@@ -353,7 +367,6 @@ def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h
             c = eval_candidat_simple(label, p, cote, "1X2 2H")
             if c:
                 resultats["2h"].append(c)
-
     resultats["p1_ht"] = round(p1_ht, 4)
     resultats["px_ht"] = round(px_ht, 4)
     resultats["p2_ht"] = round(p2_ht, 4)
@@ -384,7 +397,6 @@ def detecter_divergences(r, cotes_dict):
                     "p_modele": round(p_mod, 4), "p_marche": round(p_mar, 4),
                     "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
                 })
-
     for h in r.get("handicap_resultats", []):
         if h["cote"] and h["cote"] > 0:
             p_marche_hcp = 1.0 / h["cote"]
@@ -397,7 +409,6 @@ def detecter_divergences(r, cotes_dict):
                     "p_modele": round(h["p"], 4), "p_marche": round(p_marche_hcp, 4),
                     "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
                 })
-
     for o in r.get("ou_resultats", []):
         if o["cote"] and o["cote"] > 0:
             p_marche_ou = 1.0 / o["cote"]
@@ -410,14 +421,10 @@ def detecter_divergences(r, cotes_dict):
                     "p_modele": round(o["p"], 4), "p_marche": round(p_marche_ou, 4),
                     "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
                 })
-
     divergences.sort(key=lambda d: (0 if d["niveau"] == "MAJEUR" else 1, -abs(d["ecart"])))
     return divergences
 
 
-# =========================================================
-# FONCTION PRINCIPALE
-# =========================================================
 def analyser_match_football(
     home_ctx, home_glob, away_ctx, away_glob,
     open_1, open_x, open_2, curr_1, curr_x, curr_2,
@@ -436,66 +443,70 @@ def analyser_match_football(
     if ou_lignes is None:
         ou_lignes = []
 
-    # ========================================
-    # LAMBDA BRUT
-    # ========================================
     hbp_ctx = moy([m["bp"] for m in home_ctx])
     hbc_ctx = moy([m["bc"] for m in home_ctx])
     abp_ctx = moy([m["bp"] for m in away_ctx])
     abc_ctx = moy([m["bc"] for m in away_ctx])
-
     hbp_g = moy([m["bp"] for m in home_glob]) if home_glob else hbp_ctx
     hbc_g = moy([m["bc"] for m in home_glob]) if home_glob else hbc_ctx
     abp_g = moy([m["bp"] for m in away_glob]) if away_glob else abp_ctx
     abc_g = moy([m["bc"] for m in away_glob]) if away_glob else abc_ctx
-
     hbp = 0.7 * hbp_ctx + 0.3 * hbp_g
     hbc = 0.7 * hbc_ctx + 0.3 * hbc_g
     abp = 0.7 * abp_ctx + 0.3 * abp_g
     abc = 0.7 * abc_ctx + 0.3 * abc_g
-
     lh_brut = (hbp + abc) / 2.0
     la_brut = (abp + hbc) / 2.0
-
-    # Ajustements contextuels
     fht_h = facteur_ht(home_ctx); fht_a = facteur_ht(away_ctx)
     lh_brut *= fht_h; la_brut *= fht_a
-
     ff_h = facteur_forme_recente(home_ctx); ff_a = facteur_forme_recente(away_ctx)
     lh_brut *= ff_h; la_brut *= ff_a
-
     fc_h, fc_a = facteur_classement(pos_dom, pos_ext, total_equipes)
     lh_brut *= fc_h; la_brut *= fc_a
-
     fh2h_h, fh2h_a = facteur_h2h(h2h_matchs)
     lh_brut *= fh2h_h; la_brut *= fh2h_a
-
     fcomm = facteur_meteo(meteo) * facteur_enjeu(enjeu)
     lh_brut *= fcomm; la_brut *= fcomm
-
     lh_brut *= facteur_blessures(blessures_dom)
     la_brut *= facteur_blessures(blessures_ext)
     lh_brut *= facteur_fatigue(fatigue_dom)
     la_brut *= facteur_fatigue(fatigue_ext)
-
     lh_brut = max(lh_brut, 0.1)
     la_brut = max(la_brut, 0.1)
 
-    # ========================================
-    # QFTE SIGNATURE FOOT
-    # ========================================
+    # SIGNATURE FOOT
     signature = analyser_signature_foot(lh_brut, la_brut, ligue=ligue, n_mc=10000, rho=-0.05)
+
+    # STACKING
+    ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
+    forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
+    forensics_sharpe = 0.0
+    if forensics and forensics.get("disponible"):
+        forensics_sharpe = forensics["sharpe_signal"]["sharpe_signal"]
+
+    contexte_stack = {
+        "volatilite": 0.4,
+        "ecart_forces": ecart_forces_norm,
+        "ligue": ligue or "autre",
+        "forensics_sharpe": forensics_sharpe,
+    }
+
+    stacking = analyser_meta_ensemble(
+        signature["probas_poisson"],
+        signature["probas_dc"],
+        signature["probas_mc"],
+        signature["probas_bayes"],
+        contexte_stack
+    )
 
     lh = signature["lambda_home_bayesien"]
     la = signature["lambda_away_bayesien"]
     matrix = signature["matrix_dc"]
 
-    p1, px, p2 = compute_1x2(matrix)
-
-    # ========================================
-    # MARKET FORENSICS
-    # ========================================
-    forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
+    # Utiliser les probas stackees
+    p1 = stacking["p1_final"]
+    px = stacking["px_final"]
+    p2 = stacking["p2_final"]
 
     ev1 = compute_ev(p1, curr_1)
     evx = compute_ev(px, curr_x) if curr_x > 0 else -1.0
@@ -515,17 +526,17 @@ def analyser_match_football(
         dec, niv = classify_decision(c["fiabilite"], c["ev"])
         c["decision"] = dec; c["niveau"] = niv
         c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
-        # Appliquer forensics
-        appliquer_forensics_au_candidat(c, forensics)
+        c = appliquer_forensics_au_candidat(c, forensics)
+        c = appliquer_stacking_au_candidat(c, stacking)
 
     handicap_resultats = calcul_handicap_complet(matrix, handicap_lignes)
     ou_resultats = calcul_ou_complet_from_signature(signature, ou_lignes)
-
-    # Appliquer forensics aux handicaps et O/U
     for h in handicap_resultats:
-        appliquer_forensics_au_candidat(h, forensics)
+        h = appliquer_forensics_au_candidat(h, forensics)
+        h = appliquer_stacking_au_candidat(h, stacking)
     for o in ou_resultats:
-        appliquer_forensics_au_candidat(o, forensics)
+        o = appliquer_forensics_au_candidat(o, forensics)
+        o = appliquer_stacking_au_candidat(o, stacking)
 
     ratio_ht_h = compute_ratio_ht(home_ctx)
     ratio_ht_a = compute_ratio_ht(away_ctx)
@@ -534,12 +545,12 @@ def analyser_match_football(
     lambda_2h_h = lh * (1 - ratio_ht_h)
     lambda_2h_a = la * (1 - ratio_ht_a)
     marches_2mt = calcul_marches_2mt(lambda_ht_h, lambda_ht_a, lambda_2h_h, lambda_2h_a, cotes_ht, cotes_2h)
-
-    # Appliquer forensics aux marches 2MT
     for c in marches_2mt.get("ht", []):
-        appliquer_forensics_au_candidat(c, forensics)
+        c = appliquer_forensics_au_candidat(c, forensics)
+        c = appliquer_stacking_au_candidat(c, stacking)
     for c in marches_2mt.get("2h", []):
-        appliquer_forensics_au_candidat(c, forensics)
+        c = appliquer_forensics_au_candidat(c, forensics)
+        c = appliquer_stacking_au_candidat(c, stacking)
 
     tous = list(candidats)
     for h in handicap_resultats:
@@ -554,7 +565,6 @@ def analyser_match_football(
         c["type"] = "1X2 2H"; tous.append(c)
 
     tous.sort(key=lambda x: x["fiabilite"], reverse=True)
-
     pari_retenu = None
     for c in tous:
         if c["passe_filtres"] and c["stake"] > 0:
@@ -621,6 +631,7 @@ def analyser_match_football(
             "p_btts_non_dc": signature["p_btts_non_dc"],
         },
         "forensics": forensics,
+        "stacking": stacking,
         "p1": round(p1, 4), "px": round(px, 4), "p2": round(p2, 4),
         "ev1": round(ev1, 4), "evx": round(evx, 4), "ev2": round(ev2, 4),
         "f1": f1, "fx": fx, "f2": f2,
