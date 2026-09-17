@@ -2,6 +2,7 @@
 qfte_engine/mvp.py
 ------------------
 Moteur QFTE V23.0 - Football
+1X2 + Handicap + O/U + 2 mi-temps + Signature + Forensics + Stacking + Cross-Market.
 """
 
 import math
@@ -514,6 +515,7 @@ def detecter_divergences(r, cotes_dict):
     return divergences
 
 
+
 def analyser_match_football(
     home_ctx, home_glob, away_ctx, away_glob,
     open_1, open_x, open_2, curr_1, curr_x, curr_2,
@@ -589,10 +591,8 @@ def analyser_match_football(
     lh_brut = max(lh_brut, 0.1)
     la_brut = max(la_brut, 0.1)
 
-    # SIGNATURE FOOT
     signature = analyser_signature_foot(lh_brut, la_brut, ligue=ligue, n_mc=10000, rho=-0.05)
 
-    # STACKING
     ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
     forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
 
@@ -634,11 +634,13 @@ def analyser_match_football(
         fx = 0.0
     f2 = compute_reliability(p2, curr_2, ev2)
 
-    candidats = [
-        {"selection": "1 (Domicile)", "p": p1, "cote": curr_1, "ev": ev1, "fiabilite": f1, "type": "1X2"},
-        {"selection": "X (Nul)", "p": px, "cote": curr_x, "ev": evx, "fiabilite": fx, "type": "1X2"},
-        {"selection": "2 (Exterieur)", "p": p2, "cote": curr_2, "ev": ev2, "fiabilite": f2, "type": "1X2"},
-    ]
+    candidats = []
+    c1 = {"selection": "1 (Domicile)", "p": p1, "cote": curr_1, "ev": ev1, "fiabilite": f1, "type": "1X2"}
+    c2 = {"selection": "X (Nul)", "p": px, "cote": curr_x, "ev": evx, "fiabilite": fx, "type": "1X2"}
+    c3 = {"selection": "2 (Exterieur)", "p": p2, "cote": curr_2, "ev": ev2, "fiabilite": f2, "type": "1X2"}
+    candidats.append(c1)
+    candidats.append(c2)
+    candidats.append(c3)
 
     for c in candidats:
         passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
@@ -661,7 +663,6 @@ def analyser_match_football(
         o = appliquer_forensics_au_candidat(o, forensics)
         o = appliquer_stacking_au_candidat(o, stacking)
 
-    # === CROSS-MARKET CORRELATION ===
     cross_market = analyser_cross_market(
         candidats, handicap_resultats, ou_resultats, [],
         mu_total_ref=(lh + la)
@@ -722,7 +723,9 @@ def analyser_match_football(
         c = appliquer_forensics_au_candidat(c, forensics)
         c = appliquer_stacking_au_candidat(c, stacking)
 
-    tous = list(candidats)
+    tous = []
+    for c in candidats:
+        tous.append(c)
     for h in handicap_resultats:
         h["selection"] = "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")"
         h["type"] = "Handicap"
@@ -806,52 +809,53 @@ def analyser_match_football(
 
     signature_dict = {
         "prior_ligue": signature["prior_ligue"],
-    "lambda_home_brut": signature["lambda_home_brut"],
-    "lambda_away_brut": signature["lambda_away_brut"],
-    "lambda_home_bayesien": signature["lambda_home_bayesien"],
-    "lambda_away_bayesien": signature["lambda_away_bayesien"],
-    "rho": signature["rho"],
-    "methode": signature["methode"],
-    "n_simulations": signature["n_simulations"],
-    "ic_p1": signature["ic_p1"],
-    "ic_px": signature["ic_px"],
-    "ic_p2": signature["ic_p2"],
-    "stab_p1": signature["stab_p1"],
-    "stab_px": signature["stab_px"],
-    "stab_p2": signature["stab_p2"],
-    "p_btts_oui_dc": signature["p_btts_oui_dc"],
-    "p_btts_non_dc": signature["p_btts_non_dc"],
-}
+        "lambda_home_brut": signature["lambda_home_brut"],
+        "lambda_away_brut": signature["lambda_away_brut"],
+        "lambda_home_bayesien": signature["lambda_home_bayesien"],
+        "lambda_away_bayesien": signature["lambda_away_bayesien"],
+        "rho": signature["rho"],
+        "methode": signature["methode"],
+        "n_simulations": signature["n_simulations"],
+        "ic_p1": signature["ic_p1"],
+        "ic_px": signature["ic_px"],
+        "ic_p2": signature["ic_p2"],
+        "stab_p1": signature["stab_p1"],
+        "stab_px": signature["stab_px"],
+        "stab_p2": signature["stab_p2"],
+        "p_btts_oui_dc": signature["p_btts_oui_dc"],
+        "p_btts_non_dc": signature["p_btts_non_dc"],
+    }
 
-return {
-    "lambda_home": round(lh, 2),
-    "lambda_away": round(la, 2),
-    "lambda_home_brut": round(lh_brut, 2),
-    "lambda_away_brut": round(la_brut, 2),
-    "lambda_ht_home": round(lambda_ht_h, 2),
-    "lambda_ht_away": round(lambda_ht_a, 2),
-    "lambda_2h_home": round(lambda_2h_h, 2),
-    "lambda_2h_away": round(lambda_2h_a, 2),
-    "details": details,
-    "signature": signature_dict,
-    "forensics": forensics,
-    "stacking": stacking,
-    "cross_market": cross_market,
-    "p1": round(p1, 4),
-    "px": round(px, 4),
-    "p2": round(p2, 4),
-    "ev1": round(ev1, 4),
-    "evx": round(evx, 4),
-    "ev2": round(ev2, 4),
-    "f1": f1,
-    "fx": fx,
-    "f2": f2,
-    "candidats": candidats,
-    "handicap_resultats": handicap_resultats,
-    "ou_resultats": ou_resultats,
-    "marches_2mt": marches_2mt,
-    "ou_securite": ou_securite,
-    "pari_retenu": pari_retenu,
-    "top_3_scores": top_3,
-    "divergences": divergences,
-}
+    resultat = {}
+    resultat["lambda_home"] = round(lh, 2)
+    resultat["lambda_away"] = round(la, 2)
+    resultat["lambda_home_brut"] = round(lh_brut, 2)
+    resultat["lambda_away_brut"] = round(la_brut, 2)
+    resultat["lambda_ht_home"] = round(lambda_ht_h, 2)
+    resultat["lambda_ht_away"] = round(lambda_ht_a, 2)
+    resultat["lambda_2h_home"] = round(lambda_2h_h, 2)
+    resultat["lambda_2h_away"] = round(lambda_2h_a, 2)
+    resultat["details"] = details
+    resultat["signature"] = signature_dict
+    resultat["forensics"] = forensics
+    resultat["stacking"] = stacking
+    resultat["cross_market"] = cross_market
+    resultat["p1"] = round(p1, 4)
+    resultat["px"] = round(px, 4)
+    resultat["p2"] = round(p2, 4)
+    resultat["ev1"] = round(ev1, 4)
+    resultat["evx"] = round(evx, 4)
+    resultat["ev2"] = round(ev2, 4)
+    resultat["f1"] = f1
+    resultat["fx"] = fx
+    resultat["f2"] = f2
+    resultat["candidats"] = candidats
+    resultat["handicap_resultats"] = handicap_resultats
+    resultat["ou_resultats"] = ou_resultats
+    resultat["marches_2mt"] = marches_2mt
+    resultat["ou_securite"] = ou_securite
+    resultat["pari_retenu"] = pari_retenu
+    resultat["top_3_scores"] = top_3
+    resultat["divergences"] = divergences
+
+    return resultat
