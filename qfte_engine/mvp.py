@@ -2,7 +2,6 @@
 qfte_engine/mvp.py
 ------------------
 Moteur QFTE V23.0 - Football
-1X2 + Handicap + O/U + 2 mi-temps + Divergences + SIGNATURE FOOT + FORENSICS + STACKING + CROSS-MARKET.
 """
 
 import math
@@ -39,7 +38,9 @@ def compute_score_matrix(lambda_home, lambda_away, max_goals=8):
 
 
 def compute_1x2(matrix):
-    p1 = px = p2 = 0.0
+    p1 = 0.0
+    px = 0.0
+    p2 = 0.0
     for (i, j), p in matrix.items():
         if i > j:
             p1 += p
@@ -49,7 +50,9 @@ def compute_1x2(matrix):
             p2 += p
     total = p1 + px + p2
     if total > 0:
-        p1, px, p2 = p1 / total, px / total, p2 / total
+        p1 = p1 / total
+        px = px / total
+        p2 = p2 / total
     return p1, px, p2
 
 
@@ -76,20 +79,28 @@ def demargeage_proportionnel(cotes):
 
 
 def proba_handicap_dom(matrix, hcp):
-    p_gain = 0.0; p_remb = 0.0
+    p_gain = 0.0
+    p_remb = 0.0
     for (i, j), p in matrix.items():
-        marge = i - j; seuil = -hcp
-        if marge > seuil: p_gain += p
-        elif marge == seuil and abs(seuil - round(seuil)) < 1e-9: p_remb += p
+        marge = i - j
+        seuil = -hcp
+        if marge > seuil:
+            p_gain += p
+        elif marge == seuil and abs(seuil - round(seuil)) < 1e-9:
+            p_remb += p
     return p_gain, p_remb
 
 
 def proba_handicap_ext(matrix, hcp):
-    p_gain = 0.0; p_remb = 0.0
+    p_gain = 0.0
+    p_remb = 0.0
     for (i, j), p in matrix.items():
-        marge = j - i; seuil = -hcp
-        if marge > seuil: p_gain += p
-        elif marge == seuil and abs(seuil - round(seuil)) < 1e-9: p_remb += p
+        marge = j - i
+        seuil = -hcp
+        if marge > seuil:
+            p_gain += p
+        elif marge == seuil and abs(seuil - round(seuil)) < 1e-9:
+            p_remb += p
     return p_gain, p_remb
 
 
@@ -144,7 +155,12 @@ def facteur_forme_recente(matchs):
     points = []
     for m in matchs:
         diff = m["bp"] - m["bc"]
-        points.append(3 if diff > 0 else (1 if diff == 0 else 0))
+        if diff > 0:
+            points.append(3)
+        elif diff == 0:
+            points.append(1)
+        else:
+            points.append(0)
     moy_5 = sum(points) / len(points)
     moy_3 = sum(points[:3]) / 3.0
     ecart = max(min((moy_3 - moy_5) / 3.0, 1.0), -1.0)
@@ -173,10 +189,19 @@ def compute_ev(p, cote):
 
 def compute_reliability(p, cote, ev):
     f_p = p
-    f_v = 0.0 if ev < 0 else min(ev / 0.15, 1.0)
-    f_c = 0.7 if cote < 1.3 else (0.5 if cote > 8.0 else 1.0)
+    if ev < 0:
+        f_v = 0.0
+    else:
+        f_v = min(ev / 0.15, 1.0)
+    if cote < 1.3:
+        f_c = 0.7
+    elif cote > 8.0:
+        f_c = 0.5
+    else:
+        f_c = 1.0
     fiab = 0.50 * f_p + 0.30 * f_v + 0.20 * f_c
-    return round(min(max(fiab, 0.0), 1.0), 3)
+    fiab = min(max(fiab, 0.0), 1.0)
+    return round(fiab, 3)
 
 
 def compute_stake(p, cote, fiab, ev):
@@ -184,14 +209,21 @@ def compute_stake(p, cote, fiab, ev):
         return 0.0
     f_star = (p * cote - 1.0) / (cote - 1.0)
     if fiab >= 0.85:
-        lam, plaf = 0.30, 1.5
+        lam = 0.30
+        plaf = 1.5
     elif fiab >= 0.75:
-        lam, plaf = 0.25, 1.0
+        lam = 0.25
+        plaf = 1.0
     elif fiab >= 0.65:
-        lam, plaf = 0.15, 0.5
+        lam = 0.15
+        plaf = 0.5
     else:
-        lam, plaf = 0.10, 0.25
-    return round(max(min(f_star * lam * 100, plaf), 0.0), 2)
+        lam = 0.10
+        plaf = 0.25
+    stake = f_star * lam * 100
+    stake = min(stake, plaf)
+    stake = max(stake, 0.0)
+    return round(stake, 2)
 
 
 SEUIL_FIABILITE = 0.75
@@ -233,11 +265,17 @@ def eval_candidat_simple(label, p, cote, marche=None):
     dec, niv = classify_decision(fiab, ev)
     stake = compute_stake(p, cote, fiab, ev) if passe else 0.0
     return {
-        "selection": label, "marche": marche or "1X2",
-        "p": round(p, 4), "cote": cote,
-        "ev": round(ev, 4), "fiabilite": fiab,
-        "passe_filtres": passe, "raisons_rejet": raisons,
-        "decision": dec, "niveau": niv, "stake": stake,
+        "selection": label,
+        "marche": marche or "1X2",
+        "p": round(p, 4),
+        "cote": cote,
+        "ev": round(ev, 4),
+        "fiabilite": fiab,
+        "passe_filtres": passe,
+        "raisons_rejet": raisons,
+        "decision": dec,
+        "niveau": niv,
+        "stake": stake,
     }
 
 
@@ -290,8 +328,10 @@ def appliquer_stacking_au_candidat(c, stacking):
 def calcul_handicap_complet(matrix, handicap_lignes):
     resultats = []
     for ligne in handicap_lignes:
-        hcp_dom = ligne.get("hcp_dom"); hcp_ext = ligne.get("hcp_ext")
-        cote_dom = ligne.get("cote_dom"); cote_ext = ligne.get("cote_ext")
+        hcp_dom = ligne.get("hcp_dom")
+        hcp_ext = ligne.get("hcp_ext")
+        cote_dom = ligne.get("cote_dom")
+        cote_ext = ligne.get("cote_ext")
         if hcp_dom is not None and cote_dom:
             p_gain, p_remb = proba_handicap_dom(matrix, hcp_dom)
             p_eff = p_gain + 0.5 * p_remb
@@ -341,7 +381,10 @@ def calcul_ou_complet_from_signature(signature_result, ou_lignes):
             if c:
                 c["type_ou"] = "Under"
                 c["ligne"] = ligne
-                c["ic_95"] = (1 - ic_over[1], 1 - ic_over[0]) if ic_over else None
+                if ic_over:
+                    c["ic_95"] = (1 - ic_over[1], 1 - ic_over[0])
+                else:
+                    c["ic_95"] = None
                 c["stabilite"] = stab
                 resultats.append(c)
     return resultats
@@ -353,24 +396,29 @@ def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h
     matrix_2h = compute_score_matrix(lambda_2h_home, lambda_2h_away)
     p1_ht, px_ht, p2_ht = compute_1x2(matrix_ht)
     p1_2h, px_2h, p2_2h = compute_1x2(matrix_2h)
+
     if cotes_ht:
-        for label, p, cote in [
+        candidats_ht = [
             ("HT - 1 (Dom)", p1_ht, cotes_ht[0]),
             ("HT - X (Nul)", px_ht, cotes_ht[1]),
             ("HT - 2 (Ext)", p2_ht, cotes_ht[2]),
-        ]:
+        ]
+        for label, p, cote in candidats_ht:
             c = eval_candidat_simple(label, p, cote, "1X2 HT")
             if c:
                 resultats["ht"].append(c)
+
     if cotes_2h:
-        for label, p, cote in [
+        candidats_2h = [
             ("2H - 1 (Dom)", p1_2h, cotes_2h[0]),
             ("2H - X (Nul)", px_2h, cotes_2h[1]),
             ("2H - 2 (Ext)", p2_2h, cotes_2h[2]),
-        ]:
+        ]
+        for label, p, cote in candidats_2h:
             c = eval_candidat_simple(label, p, cote, "1X2 2H")
             if c:
                 resultats["2h"].append(c)
+
     resultats["p1_ht"] = round(p1_ht, 4)
     resultats["px_ht"] = round(px_ht, 4)
     resultats["p2_ht"] = round(p2_ht, 4)
@@ -382,49 +430,86 @@ def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h
 
 def detecter_divergences(r, cotes_dict):
     divergences = []
+
     p_marche_1x2 = demargeage_proportionnel([
-        cotes_dict.get("curr_1"), cotes_dict.get("curr_x"), cotes_dict.get("curr_2")
+        cotes_dict.get("curr_1"),
+        cotes_dict.get("curr_x"),
+        cotes_dict.get("curr_2"),
     ])
+
     if p_marche_1x2:
-        pm1, pmx, pm2 = p_marche_1x2
-        for label, p_mod, p_mar in [
+        pm1 = p_marche_1x2[0]
+        pmx = p_marche_1x2[1]
+        pm2 = p_marche_1x2[2]
+        couples = [
             ("1 (Domicile)", r["p1"], pm1),
             ("X (Nul)", r["px"], pmx),
             ("2 (Exterieur)", r["p2"], pm2),
-        ]:
+        ]
+        for label, p_mod, p_mar in couples:
             ecart = p_mod - p_mar
             if abs(ecart) > 0.15:
-                niveau = "MAJEUR" if abs(ecart) > 0.25 else "MODERE"
-                interp = "Modele > Marche - value" if ecart > 0 else "Modele < Marche - piege"
+                if abs(ecart) > 0.25:
+                    niveau = "MAJEUR"
+                else:
+                    niveau = "MODERE"
+                if ecart > 0:
+                    interp = "Modele > Marche - value"
+                else:
+                    interp = "Modele < Marche - piege"
                 divergences.append({
                     "marche": "1X2 - " + label,
-                    "p_modele": round(p_mod, 4), "p_marche": round(p_mar, 4),
-                    "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
+                    "p_modele": round(p_mod, 4),
+                    "p_marche": round(p_mar, 4),
+                    "ecart": round(ecart, 4),
+                    "niveau": niveau,
+                    "interpretation": interp,
                 })
+
     for h in r.get("handicap_resultats", []):
         if h["cote"] and h["cote"] > 0:
             p_marche_hcp = 1.0 / h["cote"]
             ecart = h["p"] - p_marche_hcp
             if abs(ecart) > 0.15:
-                niveau = "MAJEUR" if abs(ecart) > 0.25 else "MODERE"
-                interp = "Modele > Marche - value" if ecart > 0 else "Modele < Marche - piege"
+                if abs(ecart) > 0.25:
+                    niveau = "MAJEUR"
+                else:
+                    niveau = "MODERE"
+                if ecart > 0:
+                    interp = "Modele > Marche - value"
+                else:
+                    interp = "Modele < Marche - piege"
                 divergences.append({
                     "marche": "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")",
-                    "p_modele": round(h["p"], 4), "p_marche": round(p_marche_hcp, 4),
-                    "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
+                    "p_modele": round(h["p"], 4),
+                    "p_marche": round(p_marche_hcp, 4),
+                    "ecart": round(ecart, 4),
+                    "niveau": niveau,
+                    "interpretation": interp,
                 })
+
     for o in r.get("ou_resultats", []):
         if o["cote"] and o["cote"] > 0:
             p_marche_ou = 1.0 / o["cote"]
             ecart = o["p"] - p_marche_ou
             if abs(ecart) > 0.15:
-                niveau = "MAJEUR" if abs(ecart) > 0.25 else "MODERE"
-                interp = "Modele > Marche - value" if ecart > 0 else "Modele < Marche - piege"
+                if abs(ecart) > 0.25:
+                    niveau = "MAJEUR"
+                else:
+                    niveau = "MODERE"
+                if ecart > 0:
+                    interp = "Modele > Marche - value"
+                else:
+                    interp = "Modele < Marche - piege"
                 divergences.append({
                     "marche": o.get("type_ou", "O/U") + " " + str(o.get("ligne", "")),
-                    "p_modele": round(o["p"], 4), "p_marche": round(p_marche_ou, 4),
-                    "ecart": round(ecart, 4), "niveau": niveau, "interpretation": interp,
+                    "p_modele": round(o["p"], 4),
+                    "p_marche": round(p_marche_ou, 4),
+                    "ecart": round(ecart, 4),
+                    "niveau": niveau,
+                    "interpretation": interp,
                 })
+
     divergences.sort(key=lambda d: (0 if d["niveau"] == "MAJEUR" else 1, -abs(d["ecart"])))
     return divergences
 
@@ -451,37 +536,66 @@ def analyser_match_football(
     hbc_ctx = moy([m["bc"] for m in home_ctx])
     abp_ctx = moy([m["bp"] for m in away_ctx])
     abc_ctx = moy([m["bc"] for m in away_ctx])
-    hbp_g = moy([m["bp"] for m in home_glob]) if home_glob else hbp_ctx
-    hbc_g = moy([m["bc"] for m in home_glob]) if home_glob else hbc_ctx
-    abp_g = moy([m["bp"] for m in away_glob]) if away_glob else abp_ctx
-    abc_g = moy([m["bc"] for m in away_glob]) if away_glob else abc_ctx
+
+    if home_glob:
+        hbp_g = moy([m["bp"] for m in home_glob])
+        hbc_g = moy([m["bc"] for m in home_glob])
+    else:
+        hbp_g = hbp_ctx
+        hbc_g = hbc_ctx
+
+    if away_glob:
+        abp_g = moy([m["bp"] for m in away_glob])
+        abc_g = moy([m["bc"] for m in away_glob])
+    else:
+        abp_g = abp_ctx
+        abc_g = abc_ctx
+
     hbp = 0.7 * hbp_ctx + 0.3 * hbp_g
     hbc = 0.7 * hbc_ctx + 0.3 * hbc_g
     abp = 0.7 * abp_ctx + 0.3 * abp_g
     abc = 0.7 * abc_ctx + 0.3 * abc_g
+
     lh_brut = (hbp + abc) / 2.0
     la_brut = (abp + hbc) / 2.0
-    fht_h = facteur_ht(home_ctx); fht_a = facteur_ht(away_ctx)
-    lh_brut *= fht_h; la_brut *= fht_a
-    ff_h = facteur_forme_recente(home_ctx); ff_a = facteur_forme_recente(away_ctx)
-    lh_brut *= ff_h; la_brut *= ff_a
+
+    fht_h = facteur_ht(home_ctx)
+    fht_a = facteur_ht(away_ctx)
+    lh_brut *= fht_h
+    la_brut *= fht_a
+
+    ff_h = facteur_forme_recente(home_ctx)
+    ff_a = facteur_forme_recente(away_ctx)
+    lh_brut *= ff_h
+    la_brut *= ff_a
+
     fc_h, fc_a = facteur_classement(pos_dom, pos_ext, total_equipes)
-    lh_brut *= fc_h; la_brut *= fc_a
+    lh_brut *= fc_h
+    la_brut *= fc_a
+
     fh2h_h, fh2h_a = facteur_h2h(h2h_matchs)
-    lh_brut *= fh2h_h; la_brut *= fh2h_a
+    lh_brut *= fh2h_h
+    la_brut *= fh2h_a
+
     fcomm = facteur_meteo(meteo) * facteur_enjeu(enjeu)
-    lh_brut *= fcomm; la_brut *= fcomm
+    lh_brut *= fcomm
+    la_brut *= fcomm
+
     lh_brut *= facteur_blessures(blessures_dom)
     la_brut *= facteur_blessures(blessures_ext)
     lh_brut *= facteur_fatigue(fatigue_dom)
     la_brut *= facteur_fatigue(fatigue_ext)
+
     lh_brut = max(lh_brut, 0.1)
     la_brut = max(la_brut, 0.1)
 
+    # SIGNATURE FOOT
     signature = analyser_signature_foot(lh_brut, la_brut, ligue=ligue, n_mc=10000, rho=-0.05)
 
+    # STACKING
     ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
     forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
+
     forensics_sharpe = 0.0
     if forensics and forensics.get("disponible"):
         forensics_sharpe = forensics["sharpe_signal"]["sharpe_signal"]
@@ -498,7 +612,7 @@ def analyser_match_football(
         signature["probas_dc"],
         signature["probas_mc"],
         signature["probas_bayes"],
-        contexte_stack
+        contexte_stack,
     )
 
     lh = signature["lambda_home_bayesien"]
@@ -512,8 +626,12 @@ def analyser_match_football(
     ev1 = compute_ev(p1, curr_1)
     evx = compute_ev(px, curr_x) if curr_x > 0 else -1.0
     ev2 = compute_ev(p2, curr_2)
+
     f1 = compute_reliability(p1, curr_1, ev1)
-    fx = compute_reliability(px, curr_x, evx) if curr_x > 0 else 0.0
+    if curr_x > 0:
+        fx = compute_reliability(px, curr_x, evx)
+    else:
+        fx = 0.0
     f2 = compute_reliability(p2, curr_2, ev2)
 
     candidats = [
@@ -521,17 +639,21 @@ def analyser_match_football(
         {"selection": "X (Nul)", "p": px, "cote": curr_x, "ev": evx, "fiabilite": fx, "type": "1X2"},
         {"selection": "2 (Exterieur)", "p": p2, "cote": curr_2, "ev": ev2, "fiabilite": f2, "type": "1X2"},
     ]
+
     for c in candidats:
         passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
-        c["passe_filtres"] = passe; c["raisons_rejet"] = raisons
+        c["passe_filtres"] = passe
+        c["raisons_rejet"] = raisons
         dec, niv = classify_decision(c["fiabilite"], c["ev"])
-        c["decision"] = dec; c["niveau"] = niv
+        c["decision"] = dec
+        c["niveau"] = niv
         c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
         c = appliquer_forensics_au_candidat(c, forensics)
         c = appliquer_stacking_au_candidat(c, stacking)
 
     handicap_resultats = calcul_handicap_complet(matrix, handicap_lignes)
     ou_resultats = calcul_ou_complet_from_signature(signature, ou_lignes)
+
     for h in handicap_resultats:
         h = appliquer_forensics_au_candidat(h, forensics)
         h = appliquer_stacking_au_candidat(h, stacking)
@@ -544,7 +666,7 @@ def analyser_match_football(
         candidats, handicap_resultats, ou_resultats, [],
         mu_total_ref=(lh + la)
     )
-    # Ajuster la fiabilite de tous les candidats selon le Consistency Score
+
     for c in candidats:
         fiab_avant = c["fiabilite"]
         fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
@@ -557,6 +679,7 @@ def analyser_match_football(
         c["passe_filtres"] = p_f
         c["raisons_rejet"] = r_f
         c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if p_f else 0.0
+
     for h in handicap_resultats:
         fiab_avant = h["fiabilite"]
         fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
@@ -569,6 +692,7 @@ def analyser_match_football(
         h["passe_filtres"] = p_f
         h["raisons_rejet"] = r_f
         h["stake"] = compute_stake(h["p"], h["cote"], h["fiabilite"], h["ev"]) if p_f else 0.0
+
     for o in ou_resultats:
         fiab_avant = o["fiabilite"]
         fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
@@ -588,7 +712,9 @@ def analyser_match_football(
     lambda_ht_a = la * ratio_ht_a
     lambda_2h_h = lh * (1 - ratio_ht_h)
     lambda_2h_a = la * (1 - ratio_ht_a)
+
     marches_2mt = calcul_marches_2mt(lambda_ht_h, lambda_ht_a, lambda_2h_h, lambda_2h_a, cotes_ht, cotes_2h)
+
     for c in marches_2mt.get("ht", []):
         c = appliquer_forensics_au_candidat(c, forensics)
         c = appliquer_stacking_au_candidat(c, stacking)
@@ -598,17 +724,22 @@ def analyser_match_football(
 
     tous = list(candidats)
     for h in handicap_resultats:
-        h["selection"] = "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")"; h["type"] = "Handicap"
+        h["selection"] = "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")"
+        h["type"] = "Handicap"
         tous.append(h)
     for o in ou_resultats:
-        o["selection"] = o.get("type_ou", "O/U") + " " + str(o.get("ligne", "")); o["type"] = "O/U"
+        o["selection"] = o.get("type_ou", "O/U") + " " + str(o.get("ligne", ""))
+        o["type"] = "O/U"
         tous.append(o)
     for c in marches_2mt.get("ht", []):
-        c["type"] = "1X2 HT"; tous.append(c)
+        c["type"] = "1X2 HT"
+        tous.append(c)
     for c in marches_2mt.get("2h", []):
-        c["type"] = "1X2 2H"; tous.append(c)
+        c["type"] = "1X2 2H"
+        tous.append(c)
 
     tous.sort(key=lambda x: x["fiabilite"], reverse=True)
+
     pari_retenu = None
     for c in tous:
         if c["passe_filtres"] and c["stake"] > 0:
@@ -618,63 +749,109 @@ def analyser_match_football(
     ou_securite = None
     if ou_resultats:
         passes = [o for o in ou_resultats if o["passe_filtres"]]
-        ou_securite = max(passes, key=lambda x: x["fiabilite"]) if passes else max(ou_resultats, key=lambda x: x["fiabilite"])
+        if passes:
+            ou_securite = max(passes, key=lambda x: x["fiabilite"])
+        else:
+            ou_securite = max(ou_resultats, key=lambda x: x["fiabilite"])
         if pari_retenu and ou_securite:
-            if pari_retenu.get("marche") == ou_securite.get("marche") and pari_retenu.get("selection") == ou_securite.get("selection"):
+            meme_marche = pari_retenu.get("marche") == ou_securite.get("marche")
+            meme_selection = pari_retenu.get("selection") == ou_securite.get("selection")
+            if meme_marche and meme_selection:
                 ou_securite = None
         if ou_securite and ou_securite["fiabilite"] < 0.60:
             ou_securite = None
 
     top_scores = sorted(matrix.items(), key=lambda x: x[1], reverse=True)[:3]
-    top_3 = [{"rank": i+1, "score": str(s[0]) + "-" + str(s[1]), "probability": round(p, 4)} for i, (s, p) in enumerate(top_scores)]
+    top_3 = []
+    for idx, (sc, pr) in enumerate(top_scores):
+        top_3.append({
+            "rank": idx + 1,
+            "score": str(sc[0]) + "-" + str(sc[1]),
+            "probability": round(pr, 4),
+        })
 
     cotes_dict = {"curr_1": curr_1, "curr_x": curr_x, "curr_2": curr_2}
     r_temp = {
-        "p1": p1, "px": px, "p2": p2,
+        "p1": p1,
+        "px": px,
+        "p2": p2,
         "handicap_resultats": handicap_resultats,
         "ou_resultats": ou_resultats,
     }
     divergences = detecter_divergences(r_temp, cotes_dict)
 
     details = {
-        "home_bp_ctx": round(hbp_ctx, 2), "home_bp_glob": round(hbp_g, 2),
-        "away_bp_ctx": round(abp_ctx, 2), "away_bp_glob": round(abp_g, 2),
-        "ratio_ht_home": round(ratio_ht_h, 3), "ratio_ht_away": round(ratio_ht_a, 3),
-        "f_ht_home": round(fht_h, 3), "f_ht_away": round(fht_a, 3),
-        "f_forme_home": round(ff_h, 3), "f_forme_away": round(ff_a, 3),
-        "f_class_home": fc_h, "f_class_away": fc_a,
-        "f_h2h_home": fh2h_h, "f_h2h_away": fh2h_a,
-        "f_meteo": round(facteur_meteo(meteo), 3), "f_enjeu": round(facteur_enjeu(enjeu), 3),
-        "f_bless_dom": facteur_blessures(blessures_dom), "f_bless_ext": facteur_blessures(blessures_ext),
-        "f_fatigue_dom": facteur_fatigue(fatigue_dom), "f_fatigue_ext": facteur_fatigue(fatigue_ext),
+        "home_bp_ctx": round(hbp_ctx, 2),
+        "home_bp_glob": round(hbp_g, 2),
+        "away_bp_ctx": round(abp_ctx, 2),
+        "away_bp_glob": round(abp_g, 2),
+        "ratio_ht_home": round(ratio_ht_h, 3),
+        "ratio_ht_away": round(ratio_ht_a, 3),
+        "f_ht_home": round(fht_h, 3),
+        "f_ht_away": round(fht_a, 3),
+        "f_forme_home": round(ff_h, 3),
+        "f_forme_away": round(ff_a, 3),
+        "f_class_home": fc_h,
+        "f_class_away": fc_a,
+        "f_h2h_home": fh2h_h,
+        "f_h2h_away": fh2h_a,
+        "f_meteo": round(facteur_meteo(meteo), 3),
+        "f_enjeu": round(facteur_enjeu(enjeu), 3),
+        "f_bless_dom": facteur_blessures(blessures_dom),
+        "f_bless_ext": facteur_blessures(blessures_ext),
+        "f_fatigue_dom": facteur_fatigue(fatigue_dom),
+        "f_fatigue_ext": facteur_fatigue(fatigue_ext),
         "f_commun": round(fcomm, 3),
     }
 
-    return {
-        "lambda_home": round(lh, 2), "lambda_away": round(la, 2),
-        "lambda_home_brut": round(lh_brut, 2), "lambda_away_brut": round(la_brut, 2),
-        "lambda_ht_home": round(lambda_ht_h, 2), "lambda_ht_away": round(lambda_ht_a, 2),
-        "lambda_2h_home": round(lambda_2h_h, 2), "lambda_2h_away": round(lambda_2h_a, 2),
-        "details": details,
-        "signature": {
-            "prior_ligue": signature["prior_ligue"],
-            "lambda_home_brut": signature["lambda_home_brut"],
-            "lambda_away_brut": signature["lambda_away_brut"],
-            "lambda_home_bayesien": signature["lambda_home_bayesien"],
-            "lambda_away_bayesien": signature["lambda_away_bayesien"],
-            "rho": signature["rho"],
-            "methode": signature["methode"],
-            "n_simulations": signature["n_simulations"],
-            "ic_p1": signature["ic_p1"],
-            "ic_px": signature["ic_px"],
-            "ic_p2": signature["ic_p2"],
-            "stab_p1": signature["stab_p1"],
-            "stab_px": signature["stab_px"],
-            "stab_p2": signature["stab_p2"],
-            "p_btts_oui_dc": signature["p_btts_oui_dc"],
-            "p_btts_non_dc": signature["p_btts_non_dc"],
-        },
-        "forensics": forensics,
-        "stacking": stacking,
-        "cross_market": cross_market,
-        "p1": round(p1, 4), "px": round(px, 
+    signature_dict = {
+        "    "prior_ligue": signature["prior_ligue"],
+    "lambda_home_brut": signature["lambda_home_brut"],
+    "lambda_away_brut": signature["lambda_away_brut"],
+    "lambda_home_bayesien": signature["lambda_home_bayesien"],
+    "lambda_away_bayesien": signature["lambda_away_bayesien"],
+    "rho": signature["rho"],
+    "methode": signature["methode"],
+    "n_simulations": signature["n_simulations"],
+    "ic_p1": signature["ic_p1"],
+    "ic_px": signature["ic_px"],
+    "ic_p2": signature["ic_p2"],
+    "stab_p1": signature["stab_p1"],
+    "stab_px": signature["stab_px"],
+    "stab_p2": signature["stab_p2"],
+    "p_btts_oui_dc": signature["p_btts_oui_dc"],
+    "p_btts_non_dc": signature["p_btts_non_dc"],
+}
+
+return {
+    "lambda_home": round(lh, 2),
+    "lambda_away": round(la, 2),
+    "lambda_home_brut": round(lh_brut, 2),
+    "lambda_away_brut": round(la_brut, 2),
+    "lambda_ht_home": round(lambda_ht_h, 2),
+    "lambda_ht_away": round(lambda_ht_a, 2),
+    "lambda_2h_home": round(lambda_2h_h, 2),
+    "lambda_2h_away": round(lambda_2h_a, 2),
+    "details": details,
+    "signature": signature_dict,
+    "forensics": forensics,
+    "stacking": stacking,
+    "cross_market": cross_market,
+    "p1": round(p1, 4),
+    "px": round(px, 4),
+    "p2": round(p2, 4),
+    "ev1": round(ev1, 4),
+    "evx": round(evx, 4),
+    "ev2": round(ev2, 4),
+    "f1": f1,
+    "fx": fx,
+    "f2": f2,
+    "candidats": candidats,
+    "handicap_resultats": handicap_resultats,
+    "ou_resultats": ou_resultats,
+    "marches_2mt": marches_2mt,
+    "ou_securite": ou_securite,
+    "pari_retenu": pari_retenu,
+    "top_3_scores": top_3,
+    "divergences": divergences,
+}
