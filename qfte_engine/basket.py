@@ -2,7 +2,7 @@
 qfte_engine/basket.py
 ---------------------
 Moteur QFTE V23.0 - Basketball multi-ligues.
-Sigma dynamique + QFTE SIGNATURE True Sigma + Pace/OffRtg/DefRtg + Q1-Q4.
+True Sigma + Pace + Q1-Q4 + MARKET FORENSICS.
 """
 
 import math
@@ -10,7 +10,10 @@ from qfte_engine.signature import (
     analyser_true_sigma,
     sigma_mt_depuis_ft,
     sigma_quart_depuis_ft,
-    get_sigma_ligue,
+)
+from qfte_engine.forensics import (
+    analyser_market_forensics,
+    ajuster_fiabilite,
 )
 
 
@@ -152,6 +155,36 @@ def eval_candidat(label, p, cote, marche=None):
     }
 
 
+def appliquer_forensics_au_candidat(c, forensics):
+    """Ajuste la fiabilite d'un candidat basket selon le Sharpe Signal."""
+    if not forensics or not forensics.get("disponible"):
+        c["fiabilite_origine"] = c["fiabilite"]
+        c["ajustement_forensics"] = 0.0
+        c["sharpe_signal"] = None
+        return c
+
+    sharpe = forensics["sharpe_signal"]
+    fiab_origine = c["fiabilite"]
+    fiab_ajustee = ajuster_fiabilite(fiab_origine, sharpe)
+    ajustement = round(fiab_ajustee - fiab_origine, 3)
+
+    c["fiabilite_origine"] = fiab_origine
+    c["fiabilite"] = fiab_ajustee
+    c["ajustement_forensics"] = ajustement
+    c["sharpe_signal"] = sharpe["sharpe_signal"]
+
+    dec, niv = classify(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+
+    passe, raisons = appliquer_filtres(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = passe
+    c["raisons_rejet"] = raisons
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+
+    return c
+
+
 def compute_lambdas_basket(
     home_ctx, home_glob, away_ctx, away_glob,
     h2h, bd, be, fd, fe, pd, pe, te,
@@ -220,7 +253,7 @@ def compute_lambdas_basket(
         "f_bless_ext": facteur_blessures(be),
         "f_fatigue_dom": facteur_fatigue(fd),
         "f_fatigue_ext": facteur_fatigue(fe),
-    }
+}
 
 
 
@@ -262,7 +295,9 @@ def analyser_match_basket(
     ligue=None,
     pace_dom=None, offrtg_dom=None, defrtg_dom=None,
     pace_ext=None, offrtg_ext=None, defrtg_ext=None,
-    q1=None, q2=None, q3=None, q4=None
+    q1=None, q2=None, q3=None, q4=None,
+    open_1=None, open_2=None,
+    curr_1=None, curr_2=None
 ):
     if h2h_matchs is None:
         h2h_matchs = []
@@ -285,14 +320,22 @@ def analyser_match_basket(
     )
     mu_total = mu_home + mu_away
 
+    # === MARKET FORENSICS ===
+    forensics = analyser_market_forensics(
+        open_1, 0, open_2,
+        curr_1, 0, curr_2
+    )
+
     p_ml_home, p_ml_away = proba_moneyline(mu_home, mu_away, sigma_ft)
     ml_candidats = []
     if ml_ft and len(ml_ft) == 2:
         c = eval_candidat("FT - Domicile", p_ml_home, ml_ft[0], "Moneyline FT")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             ml_candidats.append(c)
         c = eval_candidat("FT - Exterieur", p_ml_away, ml_ft[1], "Moneyline FT")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             ml_candidats.append(c)
 
     spread_candidats = []
@@ -305,11 +348,13 @@ def analyser_match_basket(
             p_dom, _ = proba_spread(mu_home, mu_away, hd, sigma_ft)
             c = eval_candidat("Spread " + str(hd) + " (Dom)", p_dom, cd, "Spread FT")
             if c:
+                c = appliquer_forensics_au_candidat(c, forensics)
                 spread_candidats.append(c)
         if he is not None and ce:
             _, p_ext = proba_spread(mu_home, mu_away, he, sigma_ft)
             c = eval_candidat("Spread " + str(he) + " (Ext)", p_ext, ce, "Spread FT")
             if c:
+                c = appliquer_forensics_au_candidat(c, forensics)
                 spread_candidats.append(c)
 
     total_ft_candidats = []
@@ -323,10 +368,12 @@ def analyser_match_basket(
         if co:
             c = eval_candidat("Over " + str(ligne), p_over, co, "Total FT")
             if c:
+                c = appliquer_forensics_au_candidat(c, forensics)
                 total_ft_candidats.append(c)
         if cu:
             c = eval_candidat("Under " + str(ligne), p_under, cu, "Total FT")
             if c:
+                c = appliquer_forensics_au_candidat(c, forensics)
                 total_ft_candidats.append(c)
 
     mu_total_1h = mu_total * RATIO_1H
@@ -338,9 +385,11 @@ def analyser_match_basket(
     if ml_1h and len(ml_1h) == 2:
         c = eval_candidat("1H - Domicile", p_1h_home, ml_1h[0], "Moneyline 1H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             ml_1h_candidats.append(c)
         c = eval_candidat("1H - Exterieur", p_1h_away, ml_1h[1], "Moneyline 1H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             ml_1h_candidats.append(c)
     if total_1h and len(total_1h) == 3:
         ligne_1h = total_1h[0]
@@ -349,9 +398,11 @@ def analyser_match_basket(
         p_over, p_under = proba_total(mu_total_1h, ligne_1h, sigma_mt)
         c = eval_candidat("1H Over " + str(ligne_1h), p_over, co, "Total 1H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             total_1h_candidats.append(c)
         c = eval_candidat("1H Under " + str(ligne_1h), p_under, cu, "Total 1H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             total_1h_candidats.append(c)
 
     mu_total_2h = mu_total * RATIO_2H
@@ -363,9 +414,11 @@ def analyser_match_basket(
     if ml_2h and len(ml_2h) == 2:
         c = eval_candidat("2H - Domicile", p_2h_home, ml_2h[0], "Moneyline 2H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             ml_2h_candidats.append(c)
         c = eval_candidat("2H - Exterieur", p_2h_away, ml_2h[1], "Moneyline 2H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             ml_2h_candidats.append(c)
     if total_2h and len(total_2h) == 3:
         ligne_2h = total_2h[0]
@@ -374,9 +427,11 @@ def analyser_match_basket(
         p_over, p_under = proba_total(mu_total_2h, ligne_2h, sigma_mt)
         c = eval_candidat("2H Over " + str(ligne_2h), p_over, co, "Total 2H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             total_2h_candidats.append(c)
         c = eval_candidat("2H Under " + str(ligne_2h), p_under, cu, "Total 2H")
         if c:
+            c = appliquer_forensics_au_candidat(c, forensics)
             total_2h_candidats.append(c)
 
     quart_data = [
@@ -401,17 +456,21 @@ def analyser_match_basket(
                 p_o, p_u = proba_total(mu_q, ligne_q, sigma_quart)
                 c = eval_candidat(nom + " Over " + str(ligne_q), p_o, co_q, "Total " + nom)
                 if c:
+                    c = appliquer_forensics_au_candidat(c, forensics)
                     resultats_q["total"].append(c)
                 c = eval_candidat(nom + " Under " + str(ligne_q), p_u, cu_q, "Total " + nom)
                 if c:
+                    c = appliquer_forensics_au_candidat(c, forensics)
                     resultats_q["total"].append(c)
             if ml_cfg and len(ml_cfg) == 2:
                 p_h, p_a = proba_moneyline(mu_h, mu_a, sigma_quart)
                 c = eval_candidat(nom + " - Domicile", p_h, ml_cfg[0], "Moneyline " + nom)
                 if c:
+                    c = appliquer_forensics_au_candidat(c, forensics)
                     resultats_q["ml"].append(c)
                 c = eval_candidat(nom + " - Exterieur", p_a, ml_cfg[1], "Moneyline " + nom)
                 if c:
+                    c = appliquer_forensics_au_candidat(c, forensics)
                     resultats_q["ml"].append(c)
         quarts_resultats[nom] = resultats_q
 
@@ -435,7 +494,6 @@ def analyser_match_basket(
             pari_retenu = c
             break
 
-    # Appliquer le multiplicateur de stake (QFTE SIGNATURE)
     if pari_retenu:
         multi = signature["multiplicateur_stake"]
         pari_retenu["stake_origine"] = pari_retenu["stake"]
@@ -451,6 +509,7 @@ def analyser_match_basket(
         "sigma_mt": sigma_mt,
         "sigma_quart": sigma_quart,
         "signature": signature,
+        "forensics": forensics,
         "details": details,
         "p_ml_home": round(p_ml_home, 4),
         "p_ml_away": round(p_ml_away, 4),
