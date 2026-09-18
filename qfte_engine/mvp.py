@@ -5,6 +5,7 @@ Moteur QFTE V23.0 - Football
 """
 
 import math
+
 from qfte_engine.signature_foot import (
     analyser_signature_foot,
     calculer_over_under_avec_ic,
@@ -22,7 +23,10 @@ from qfte_engine.cross_market import (
     ajuster_fiabilite_consistency,
 )
 from qfte_engine.regime import analyser_regime
-from qfte_engine.time_decay import extraire_moyennes_ponderees, fusion_ponderee
+from qfte_engine.time_decay import (
+    extraire_moyennes_ponderees,
+    fusion_ponderee,
+)
 
 
 def poisson_pmf(k, lam):
@@ -33,9 +37,14 @@ def poisson_pmf(k, lam):
 
 def compute_score_matrix(lambda_home, lambda_away, max_goals=8):
     matrix = {}
+
     for i in range(max_goals + 1):
         for j in range(max_goals + 1):
-            matrix[(i, j)] = poisson_pmf(i, lambda_home) * poisson_pmf(j, lambda_away)
+            matrix[(i, j)] = (
+                poisson_pmf(i, lambda_home)
+                * poisson_pmf(j, lambda_away)
+            )
+
     return matrix
 
 
@@ -43,6 +52,7 @@ def compute_1x2(matrix):
     p1 = 0.0
     px = 0.0
     p2 = 0.0
+
     for (i, j), p in matrix.items():
         if i > j:
             p1 += p
@@ -50,76 +60,117 @@ def compute_1x2(matrix):
             px += p
         else:
             p2 += p
+
     total = p1 + px + p2
+
     if total > 0:
         p1 = p1 / total
         px = px / total
         p2 = p2 / total
+
     return p1, px, p2
 
 
 def compute_ratio_ht(matchs):
-    m_ht = [m for m in matchs if m.get("ht_bp") is not None]
+    m_ht = [
+        m for m in matchs
+        if m.get("ht_bp") is not None
+    ]
+
     if not m_ht:
         return 0.45
+
     total_bp = sum(m["bp"] for m in m_ht)
     total_ht_bp = sum(m["ht_bp"] for m in m_ht)
+
     if total_bp <= 0:
         return 0.45
+
     r = total_ht_bp / total_bp
+
     return max(min(r, 0.70), 0.25)
 
 
 def demargeage_proportionnel(cotes):
     if not cotes or any(c is None or c <= 0 for c in cotes):
         return None
-    inv = [1/c for c in cotes]
+
+    inv = [1 / c for c in cotes]
     total = sum(inv)
+
     if total <= 0:
         return None
-    return [i/total for i in inv]
 
+    return [i / total for i in inv]
 
 
 def proba_handicap_dom(matrix, hcp):
     p_gain = 0.0
     p_remb = 0.0
+
     for (i, j), p in matrix.items():
         marge = i - j
         seuil = -hcp
+
         if marge > seuil:
             p_gain += p
-        elif marge == seuil and abs(seuil - round(seuil)) < 1e-9:
+
+        elif (
+            marge == seuil
+            and abs(seuil - round(seuil)) < 1e-9
+        ):
             p_remb += p
+
     return p_gain, p_remb
 
 
 def proba_handicap_ext(matrix, hcp):
     p_gain = 0.0
     p_remb = 0.0
+
     for (i, j), p in matrix.items():
         marge = j - i
         seuil = -hcp
+
         if marge > seuil:
             p_gain += p
-        elif marge == seuil and abs(seuil - round(seuil)) < 1e-9:
+
+        elif (
+            marge == seuil
+            and abs(seuil - round(seuil)) < 1e-9
+        ):
             p_remb += p
+
     return p_gain, p_remb
 
 
 def moy(vals):
     v = [x for x in vals if x is not None]
+
     if not v:
         return 0.0
+
     return sum(v) / len(v)
 
 
 def facteur_meteo(m):
-    return {"normale": 1.00, "pluie": 0.90, "neige": 0.85, "chaleur_extreme": 0.90, "vent_fort": 0.92}.get(m, 1.00)
+    return {
+        "normale": 1.00,
+        "pluie": 0.90,
+        "neige": 0.85,
+        "chaleur_extreme": 0.90,
+        "vent_fort": 0.92,
+    }.get(m, 1.00)
 
 
 def facteur_enjeu(e):
-    return {"normal": 1.00, "derby": 0.95, "finale": 0.92, "fin_saison": 0.97, "relegation": 0.95}.get(e, 1.00)
+    return {
+        "normal": 1.00,
+        "derby": 0.95,
+        "finale": 0.92,
+        "fin_saison": 0.97,
+        "relegation": 0.95,
+    }.get(e, 1.00)
 
 
 def facteur_blessures(a):
@@ -131,101 +182,178 @@ def facteur_fatigue(a):
 
 
 def facteur_classement(pos_dom, pos_ext, total):
-    if pos_dom is None or pos_ext is None or total is None or total <= 1:
+    if (
+        pos_dom is None
+        or pos_ext is None
+        or total is None
+        or total <= 1
+    ):
         return (1.0, 1.0)
-    ecart = max(min((pos_ext - pos_dom) / total, 1.0), -1.0)
+
+    ecart = max(
+        min((pos_ext - pos_dom) / total, 1.0),
+        -1.0,
+    )
+
     ajust = ecart * 0.15
-    return (round(1.0 + ajust, 3), round(1.0 - ajust, 3))
+
+    return (
+        round(1.0 + ajust, 3),
+        round(1.0 - ajust, 3),
+    )
 
 
 def facteur_ht(matchs):
-    m_ht = [m for m in matchs if m.get("ht_bp") is not None]
+    m_ht = [
+        m for m in matchs
+        if m.get("ht_bp") is not None
+    ]
+
     if not m_ht:
         return 1.00
+
     total_bp = sum(m["bp"] for m in m_ht)
     total_ht_bp = sum(m["ht_bp"] for m in m_ht)
+
     if total_bp == 0:
         return 1.00
-    ratio_2e = (total_bp - total_ht_bp) / total_bp
-    ecart = (ratio_2e - 0.5) * 0.20
-    ecart = max(min(ecart, 0.05), -0.05)
+
+    ratio_2e = (
+        total_bp - total_ht_bp
+    ) / total_bp
+
+    ecart = (
+        ratio_2e - 0.5
+    ) * 0.20
+
+    ecart = max(
+        min(ecart, 0.05),
+        -0.05,
+    )
+
     return 1.00 + ecart
 
 
 def facteur_forme_recente(matchs):
     if len(matchs) < 5:
         return 1.00
+
     points = []
+
     for m in matchs:
         diff = m["bp"] - m["bc"]
+
         if diff > 0:
             points.append(3)
         elif diff == 0:
             points.append(1)
         else:
             points.append(0)
+
     moy_5 = sum(points) / len(points)
     moy_3 = sum(points[:3]) / 3.0
-    ecart = max(min((moy_3 - moy_5) / 3.0, 1.0), -1.0)
+
+    ecart = max(
+        min((moy_3 - moy_5) / 3.0, 1.0),
+        -1.0,
+    )
+
     return 1.00 + ecart * 0.05
 
 
 def facteur_h2h(h2h_matchs):
     if not h2h_matchs:
         return (1.00, 1.00)
+
     v = 0
+
     for m in h2h_matchs:
         if m["bp"] > m["bc"]:
             v += 1
         elif m["bp"] < m["bc"]:
             v -= 1
+
     ratio = v / len(h2h_matchs)
     ajust = ratio * 0.08
-    return (round(1.0 + ajust, 3), round(1.0 - ajust, 3))
+
+    return (
+        round(1.0 + ajust, 3),
+        round(1.0 - ajust, 3),
+    )
 
 
 def compute_ev(p, cote):
     if cote <= 0:
         return 0.0
+
     return p * cote - 1.0
 
 
 def compute_reliability(p, cote, ev):
     f_p = p
+
     if ev < 0:
         f_v = 0.0
     else:
         f_v = min(ev / 0.15, 1.0)
+
     if cote < 1.3:
         f_c = 0.7
     elif cote > 8.0:
         f_c = 0.5
     else:
         f_c = 1.0
-    fiab = 0.50 * f_p + 0.30 * f_v + 0.20 * f_c
-    fiab = min(max(fiab, 0.0), 1.0)
+
+    fiab = (
+        0.50 * f_p
+        + 0.30 * f_v
+        + 0.20 * f_c
+    )
+
+    fiab = min(
+        max(fiab, 0.0),
+        1.0,
+    )
+
     return round(fiab, 3)
 
 
 def compute_stake(p, cote, fiab, ev):
     if ev <= 0 or cote <= 1:
         return 0.0
-    f_star = (p * cote - 1.0) / (cote - 1.0)
+
+    f_star = (
+        p * cote - 1.0
+    ) / (cote - 1.0)
+
     if fiab >= 0.85:
         lam = 0.30
         plaf = 1.5
+
     elif fiab >= 0.75:
         lam = 0.25
         plaf = 1.0
+
     elif fiab >= 0.65:
         lam = 0.15
         plaf = 0.5
+
     else:
         lam = 0.10
         plaf = 0.25
+
     stake = f_star * lam * 100
-    stake = min(stake, plaf)
-    stake = max(stake, 0.0)
+
+    stake = min(
+        stake,
+        plaf,
+    )
+
+    stake = max(
+        stake,
+        0.0,
+    )
+
     return round(stake, 2)
 
 
@@ -234,39 +362,112 @@ SEUIL_VALUE_1X2 = 0.05
 SEUIL_CONFIANCE = 0.70
 
 
-def appliquer_filtres_discipline(p, cote, ev, fiab):
+def appliquer_filtres_discipline(
+    p,
+    cote,
+    ev,
+    fiab,
+):
     r = []
+
     if fiab < SEUIL_FIABILITE:
-        r.append("Fiabilite " + str(fiab) + " < " + str(SEUIL_FIABILITE))
+        r.append(
+            "Fiabilite "
+            + str(fiab)
+            + " < "
+            + str(SEUIL_FIABILITE)
+        )
+
     if ev < SEUIL_VALUE_1X2:
-        r.append("Value " + str(round(ev * 100, 2)) + "% < " + str(int(SEUIL_VALUE_1X2 * 100)) + "%")
+        r.append(
+            "Value "
+            + str(round(ev * 100, 2))
+            + "% < "
+            + str(int(SEUIL_VALUE_1X2 * 100))
+            + "%"
+        )
+
     if p < SEUIL_CONFIANCE:
-        r.append("Confiance " + str(round(p * 100, 2)) + "% < " + str(int(SEUIL_CONFIANCE * 100)) + "%")
-    return (len(r) == 0, r)
+        r.append(
+            "Confiance "
+            + str(round(p * 100, 2))
+            + "% < "
+            + str(int(SEUIL_CONFIANCE * 100))
+            + "%"
+        )
+
+    return (
+        len(r) == 0,
+        r,
+    )
 
 
 def classify_decision(fiab, ev):
-    if fiab >= 0.85 and ev >= SEUIL_VALUE_1X2:
+    if (
+        fiab >= 0.85
+        and ev >= SEUIL_VALUE_1X2
+    ):
         return "ATTAQUE FORTE", "ELITE"
-    elif fiab >= 0.75 and ev >= SEUIL_VALUE_1X2:
+
+    elif (
+        fiab >= 0.75
+        and ev >= SEUIL_VALUE_1X2
+    ):
         return "ATTAQUE", "PREMIUM"
+
     elif fiab >= 0.65:
         return "LEAN", "GOOD"
+
     elif fiab >= 0.55:
         return "SURVEILLANCE", "SURVEILLANCE"
+
     else:
         return "EVITER", "AVOID"
 
 
-
-def eval_candidat_simple(label, p, cote, marche=None):
+def eval_candidat_simple(
+    label,
+    p,
+    cote,
+    marche=None,
+):
     if not cote or cote <= 0:
         return None
-    ev = compute_ev(p, cote)
-    fiab = compute_reliability(p, cote, ev)
-    passe, raisons = appliquer_filtres_discipline(p, cote, ev, fiab)
-    dec, niv = classify_decision(fiab, ev)
-    stake = compute_stake(p, cote, fiab, ev) if passe else 0.0
+
+    ev = compute_ev(
+        p,
+        cote,
+    )
+
+    fiab = compute_reliability(
+        p,
+        cote,
+        ev,
+    )
+
+    passe, raisons = appliquer_filtres_discipline(
+        p,
+        cote,
+        ev,
+        fiab,
+    )
+
+    dec, niv = classify_decision(
+        fiab,
+        ev,
+    )
+
+    stake = (
+        compute_stake(
+            p,
+            cote,
+            fiab,
+            ev,
+        )
+        if passe
+        else 0.0
+    )
+
     return {
         "selection": label,
         "marche": marche or "1X2",
@@ -281,599 +482,756 @@ def eval_candidat_simple(label, p, cote, marche=None):
         "stake": stake,
     }
 
+def appliquer_forensics_au_candidat(candidat, forensics):
+    if not candidat or not forensics:
+        return candidat
 
-def appliquer_forensics_au_candidat(c, forensics):
-    if not forensics or not forensics.get("disponible"):
-        c["fiabilite_origine"] = c["fiabilite"]
-        c["ajustement_forensics"] = 0.0
-        c["sharpe_signal"] = None
-        return c
-    sharpe = forensics["sharpe_signal"]
-    fiab_origine = c["fiabilite"]
-    fiab_ajustee = ajuster_fiabilite(fiab_origine, sharpe)
-    ajustement = round(fiab_ajustee - fiab_origine, 3)
-    c["fiabilite_origine"] = fiab_origine
-    c["fiabilite"] = fiab_ajustee
-    c["ajustement_forensics"] = ajustement
-    c["sharpe_signal"] = sharpe["sharpe_signal"]
-    dec, niv = classify_decision(c["fiabilite"], c["ev"])
-    c["decision"] = dec
-    c["niveau"] = niv
-    passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
-    c["passe_filtres"] = passe
-    c["raisons_rejet"] = raisons
-    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
-    return c
+    fiab_adj = ajuster_fiabilite(
+        candidat["fiabilite"],
+        forensics,
+    )
 
+    candidat["fiabilite"] = round(
+        max(0.0, min(fiab_adj, 1.0)),
+        3,
+    )
 
-def appliquer_stacking_au_candidat(c, stacking):
-    if not stacking or not stacking.get("disponible"):
-        c["pcs_label"] = None
-        c["ajustement_stacking"] = 0.0
-        return c
-    pcs = stacking["pcs"]
-    fiab_avant = c["fiabilite"]
-    fiab_apres = ajuster_fiabilite_pcs(fiab_avant, pcs)
-    ajustement = round(fiab_apres - fiab_avant, 3)
-    c["fiabilite"] = fiab_apres
-    c["pcs_label"] = pcs["label"]
-    c["ajustement_stacking"] = ajustement
-    dec, niv = classify_decision(c["fiabilite"], c["ev"])
-    c["decision"] = dec
-    c["niveau"] = niv
-    passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
-    c["passe_filtres"] = passe
-    c["raisons_rejet"] = raisons
-    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
-    return c
+    candidat["ev"] = round(
+        candidat["p"] * candidat["cote"] - 1.0,
+        4,
+    )
+
+    candidat["passe_filtres"] = (
+        candidat["fiabilite"] >= SEUIL_FIABILITE
+        and candidat["ev"] >= SEUIL_VALUE_1X2
+        and candidat["p"] >= SEUIL_CONFIANCE
+    )
+
+    candidat["decision"], candidat["niveau"] = classify_decision(
+        candidat["fiabilite"],
+        candidat["ev"],
+    )
+
+    candidat["stake"] = (
+        compute_stake(
+            candidat["p"],
+            candidat["cote"],
+            candidat["fiabilite"],
+            candidat["ev"],
+        )
+        if candidat["passe_filtres"]
+        else 0.0
+    )
+
+    return candidat
 
 
-def calcul_handicap_complet(matrix, handicap_lignes):
-    resultats = []
-    for ligne in handicap_lignes:
-        hcp_dom = ligne.get("hcp_dom")
-        hcp_ext = ligne.get("hcp_ext")
-        cote_dom = ligne.get("cote_dom")
-        cote_ext = ligne.get("cote_ext")
-        if hcp_dom is not None and cote_dom:
-            p_gain, p_remb = proba_handicap_dom(matrix, hcp_dom)
-            p_eff = p_gain + 0.5 * p_remb
-            c = eval_candidat_simple("Hcp " + str(hcp_dom) + " (Dom)", p_eff, cote_dom, "Handicap")
-            if c:
-                c["hcp"] = hcp_dom
-                c["cible"] = "Domicile"
-                c["p_gain"] = round(p_gain, 4)
-                c["p_remb"] = round(p_remb, 4)
-                resultats.append(c)
-        if hcp_ext is not None and cote_ext:
-            p_gain, p_remb = proba_handicap_ext(matrix, hcp_ext)
-            p_eff = p_gain + 0.5 * p_remb
-            c = eval_candidat_simple("Hcp " + str(hcp_ext) + " (Ext)", p_eff, cote_ext, "Handicap")
-            if c:
-                c["hcp"] = hcp_ext
-                c["cible"] = "Exterieur"
-                c["p_gain"] = round(p_gain, 4)
-                c["p_remb"] = round(p_remb, 4)
-                resultats.append(c)
-    return resultats
+def appliquer_stacking_au_candidat(candidat, stacking):
+    if not candidat or not stacking:
+        return candidat
+
+    fiab_adj = ajuster_fiabilite_pcs(
+        candidat["fiabilite"],
+        stacking,
+    )
+
+    candidat["fiabilite"] = round(
+        max(0.0, min(fiab_adj, 1.0)),
+        3,
+    )
+
+    candidat["passe_filtres"] = (
+        candidat["fiabilite"] >= SEUIL_FIABILITE
+        and candidat["ev"] >= SEUIL_VALUE_1X2
+        and candidat["p"] >= SEUIL_CONFIANCE
+    )
+
+    candidat["decision"], candidat["niveau"] = classify_decision(
+        candidat["fiabilite"],
+        candidat["ev"],
+    )
+
+    candidat["stake"] = (
+        compute_stake(
+            candidat["p"],
+            candidat["cote"],
+            candidat["fiabilite"],
+            candidat["ev"],
+        )
+        if candidat["passe_filtres"]
+        else 0.0
+    )
+
+    return candidat
 
 
-def calcul_ou_complet_from_signature(signature_result, ou_lignes):
-    resultats = []
-    for l in ou_lignes:
-        ligne = l.get("ligne")
-        cote_over = l.get("cote_over")
-        cote_under = l.get("cote_under")
-        if ligne is None:
-            continue
-        data = calculer_over_under_avec_ic(signature_result, ligne)
-        p_over = data["p_over"]
-        p_under = data["p_under"]
-        ic_over = data["ic_over"]
-        stab = data["stabilite"]
-        if cote_over and cote_over > 0:
-            c = eval_candidat_simple("Over " + str(ligne), p_over, cote_over, "O/U")
-            if c:
-                c["type_ou"] = "Over"
-                c["ligne"] = ligne
-                c["ic_95"] = ic_over
-                c["stabilite"] = stab
-                resultats.append(c)
-        if cote_under and cote_under > 0:
-            c = eval_candidat_simple("Under " + str(ligne), p_under, cote_under, "O/U")
-            if c:
-                c["type_ou"] = "Under"
-                c["ligne"] = ligne
-                if ic_over:
-                    c["ic_95"] = (1 - ic_over[1], 1 - ic_over[0])
-                else:
-                    c["ic_95"] = None
-                c["stabilite"] = stab
-                resultats.append(c)
-    return resultats
+def calcul_handicap_complet(
+    matrix,
+    cote_dom,
+    cote_ext,
+    hcp,
+):
+    p_dom_gain, p_dom_remb = proba_handicap_dom(
+        matrix,
+        hcp,
+    )
+
+    p_ext_gain, p_ext_remb = proba_handicap_ext(
+        matrix,
+        hcp,
+    )
+
+    candidats = []
+
+    if cote_dom and cote_dom > 0:
+        candidats.append(
+            eval_candidat_simple(
+                "Domicile AH " + str(hcp),
+                p_dom_gain,
+                cote_dom,
+                "Asian Handicap",
+            )
+        )
+
+    if cote_ext and cote_ext > 0:
+        candidats.append(
+            eval_candidat_simple(
+                "Exterieur AH " + str(hcp),
+                p_ext_gain,
+                cote_ext,
+                "Asian Handicap",
+            )
+        )
+
+    return {
+        "handicap": hcp,
+        "p_dom_gain": round(p_dom_gain, 4),
+        "p_dom_remb": round(p_dom_remb, 4),
+        "p_ext_gain": round(p_ext_gain, 4),
+        "p_ext_remb": round(p_ext_remb, 4),
+        "candidats": [
+            c for c in candidats
+            if c is not None
+        ],
+    }
 
 
+def calcul_ou_complet_from_signature(
+    matchs_dom,
+    matchs_ext,
+    cote_over,
+    cote_under,
+    ligne,
+    contexte=None,
+):
+    signature = analyser_signature_foot(
+        matchs_dom,
+        matchs_ext,
+        contexte or {},
+    )
 
-def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h_away, cotes_ht, cotes_2h):
-    resultats = {"ht": [], "2h": []}
-    matrix_ht = compute_score_matrix(lambda_ht_home, lambda_ht_away)
-    matrix_2h = compute_score_matrix(lambda_2h_home, lambda_2h_away)
-    p1_ht, px_ht, p2_ht = compute_1x2(matrix_ht)
-    p1_2h, px_2h, p2_2h = compute_1x2(matrix_2h)
+    ou = calculer_over_under_avec_ic(
+        signature,
+        ligne,
+    )
 
-    if cotes_ht:
-        candidats_ht = [
-            ("HT - 1 (Dom)", p1_ht, cotes_ht[0]),
-            ("HT - X (Nul)", px_ht, cotes_ht[1]),
-            ("HT - 2 (Ext)", p2_ht, cotes_ht[2]),
-        ]
-        for label, p, cote in candidats_ht:
-            c = eval_candidat_simple(label, p, cote, "1X2 HT")
-            if c:
-                resultats["ht"].append(c)
+    p_over = ou.get(
+        "p_over",
+        ou.get("prob_over", 0.0),
+    )
 
-    if cotes_2h:
-        candidats_2h = [
-            ("2H - 1 (Dom)", p1_2h, cotes_2h[0]),
-            ("2H - X (Nul)", px_2h, cotes_2h[1]),
-            ("2H - 2 (Ext)", p2_2h, cotes_2h[2]),
-        ]
-        for label, p, cote in candidats_2h:
-            c = eval_candidat_simple(label, p, cote, "1X2 2H")
-            if c:
-                resultats["2h"].append(c)
+    p_under = ou.get(
+        "p_under",
+        ou.get("prob_under", 0.0),
+    )
 
-    resultats["p1_ht"] = round(p1_ht, 4)
-    resultats["px_ht"] = round(px_ht, 4)
-    resultats["p2_ht"] = round(p2_ht, 4)
-    resultats["p1_2h"] = round(p1_2h, 4)
-    resultats["px_2h"] = round(px_2h, 4)
-    resultats["p2_2h"] = round(p2_2h, 4)
-    return resultats
+    candidats = []
+
+    if cote_over and cote_over > 0:
+        candidats.append(
+            eval_candidat_simple(
+                "Over " + str(ligne),
+                p_over,
+                cote_over,
+                "Over/Under",
+            )
+        )
+
+    if cote_under and cote_under > 0:
+        candidats.append(
+            eval_candidat_simple(
+                "Under " + str(ligne),
+                p_under,
+                cote_under,
+                "Over/Under",
+            )
+        )
+
+    return {
+        "signature": signature,
+        "ou": ou,
+        "candidats": [
+            c for c in candidats
+            if c is not None
+        ],
+    }
 
 
-def detecter_divergences(r, cotes_dict):
-    divergences = []
+def calcul_marches_2mt(
+    lambda_total,
+    ratio_ht,
+    cote_over_ht,
+    cote_under_ht,
+    cote_btts,
+):
+    lambda_ht = max(
+        lambda_total * ratio_ht,
+        0.01,
+    )
 
-    p_marche_1x2 = demargeage_proportionnel([
-        cotes_dict.get("curr_1"),
-        cotes_dict.get("curr_x"),
-        cotes_dict.get("curr_2"),
-    ])
+    lambda_2mt = max(
+        lambda_total - lambda_ht,
+        0.01,
+    )
 
-    if p_marche_1x2:
-        pm1 = p_marche_1x2[0]
-        pmx = p_marche_1x2[1]
-        pm2 = p_marche_1x2[2]
-        couples = [
-            ("1 (Domicile)", r["p1"], pm1),
-            ("X (Nul)", r["px"], pmx),
-            ("2 (Exterieur)", r["p2"], pm2),
-        ]
-        for label, p_mod, p_mar in couples:
-            ecart = p_mod - p_mar
-            if abs(ecart) > 0.15:
-                if abs(ecart) > 0.25:
-                    niveau = "MAJEUR"
-                else:
-                    niveau = "MODERE"
-                if ecart > 0:
-                    interp = "Modele > Marche - value"
-                else:
-                    interp = "Modele < Marche - piege"
-                divergences.append({
-                    "marche": "1X2 - " + label,
-                    "p_modele": round(p_mod, 4),
-                    "p_marche": round(p_mar, 4),
-                    "ecart": round(ecart, 4),
-                    "niveau": niveau,
-                    "interpretation": interp,
-                })
+    p_over_ht = 1.0 - poisson_pmf(
+        0,
+        lambda_ht,
+    )
 
-    for h in r.get("handicap_resultats", []):
-        if h["cote"] and h["cote"] > 0:
-            p_marche_hcp = 1.0 / h["cote"]
-            ecart = h["p"] - p_marche_hcp
-            if abs(ecart) > 0.15:
-                if abs(ecart) > 0.25:
-                    niveau = "MAJEUR"
-                else:
-                    niveau = "MODERE"
-                if ecart > 0:
-                    interp = "Modele > Marche - value"
-                else:
-                    interp = "Modele < Marche - piege"
-                divergences.append({
-                    "marche": "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")",
-                    "p_modele": round(h["p"], 4),
-                    "p_marche": round(p_marche_hcp, 4),
-                    "ecart": round(ecart, 4),
-                    "niveau": niveau,
-                    "interpretation": interp,
-                })
+    p_over_2mt = 1.0 - poisson_pmf(
+        0,
+        lambda_2mt,
+    )
 
-    for o in r.get("ou_resultats", []):
-        if o["cote"] and o["cote"] > 0:
-            p_marche_ou = 1.0 / o["cote"]
-            ecart = o["p"] - p_marche_ou
-            if abs(ecart) > 0.15:
-                if abs(ecart) > 0.25:
-                    niveau = "MAJEUR"
-                else:
-                    niveau = "MODERE"
-                if ecart > 0:
-                    interp = "Modele > Marche - value"
-                else:
-                    interp = "Modele < Marche - piege"
-                divergences.append({
-                    "marche": o.get("type_ou", "O/U") + " " + str(o.get("ligne", "")),
-                    "p_modele": round(o["p"], 4),
-                    "p_marche": round(p_marche_ou, 4),
-                    "ecart": round(ecart, 4),
-                    "niveau": niveau,
-                    "interpretation": interp,
-                })
+    p_btts = (
+        (1.0 - math.exp(-lambda_ht))
+        * (1.0 - math.exp(-lambda_2mt))
+    )
 
-    divergences.sort(key=lambda d: (0 if d["niveau"] == "MAJEUR" else 1, -abs(d["ecart"])))
-    return divergences
+    candidats = []
+
+    if cote_over_ht and cote_over_ht > 0:
+        candidats.append(
+            eval_candidat_simple(
+                "Over 0.5 HT",
+                p_over_ht,
+                cote_over_ht,
+                "Mi-temps",
+            )
+        )
+
+    if cote_under_ht and cote_under_ht > 0:
+        candidats.append(
+            eval_candidat_simple(
+                "Under 0.5 HT",
+                1.0 - p_over_ht,
+                cote_under_ht,
+                "Mi-temps",
+            )
+        )
+
+    if cote_btts and cote_btts > 0:
+        candidats.append(
+            eval_candidat_simple(
+                "BTTS Oui",
+                p_btts,
+                cote_btts,
+                "BTTS",
+            )
+        )
+
+    return {
+        "lambda_ht": round(lambda_ht, 4),
+        "lambda_2mt": round(lambda_2mt, 4),
+        "p_over_ht": round(p_over_ht, 4),
+        "p_over_2mt": round(p_over_2mt, 4),
+        "p_btts": round(p_btts, 4),
+        "candidats": [
+            c for c in candidats
+            if c is not None
+        ],
+    }
+
+
+def detecter_divergences(
+    p_model,
+    p_market,
+    seuil=0.10,
+):
+    if p_market is None:
+        return {
+            "divergence": False,
+            "ecart": None,
+            "type": None,
+        }
+
+    ecart = p_model - p_market
+
+    if abs(ecart) < seuil:
+        typ = "faible"
+
+    elif ecart > 0:
+        typ = "modele_superieur_marche"
+
+    else:
+        typ = "marche_superieur_modele"
+
+    return {
+        "divergence": abs(ecart) >= seuil,
+        "ecart": round(ecart, 4),
+        "type": typ,
+    }
 
 
 def analyser_match_football(
-    home_ctx, home_glob, away_ctx, away_glob,
-    open_1, open_x, open_2, curr_1, curr_x, curr_2,
-    meteo="normale", enjeu="normal",
-    blessures_dom=False, blessures_ext=False,
-    fatigue_dom=False, fatigue_ext=False,
-    h2h_matchs=None, handicap_lignes=None, ou_lignes=None,
-    pos_dom=None, pos_ext=None, total_equipes=None,
-    cotes_ht=None, cotes_2h=None,
-    ligue=None
+    nom_match,
+    matchs_dom,
+    matchs_ext,
+    h2h_matchs=None,
+    contexte=None,
+    cotes=None,
+    classement=None,
+    blessures_dom=False,
+    blessures_ext=False,
+    fatigue_dom=False,
+    fatigue_ext=False,
 ):
-    if h2h_matchs is None:
-        h2h_matchs = []
-    if handicap_lignes is None:
-        handicap_lignes = []
-    if ou_lignes is None:
-        ou_lignes = []
+    h2h_matchs = h2h_matchs or []
+    contexte = contexte or {}
+    cotes = cotes or {}
+    classement = classement or {}
 
-    # ========================================
-    # TIME-DECAY : moyennes ponderees par rang
-    # ========================================
-    moy_ctx_h = extraire_moyennes_ponderees(home_ctx)
-    moy_ctx_a = extraire_moyennes_ponderees(away_ctx)
-    moy_glob_h = extraire_moyennes_ponderees(home_glob)
-    moy_glob_a = extraire_moyennes_ponderees(away_glob)
+    pos_dom = classement.get("dom")
+    pos_ext = classement.get("ext")
+    total_equipes = classement.get("total")
 
-    hbp_ctx = moy_ctx_h["bp"]
-    hbc_ctx = moy_ctx_h["bc"]
-    abp_ctx = moy_ctx_a["bp"]
-    abc_ctx = moy_ctx_a["bc"]
+    bp_dom = moy([
+        m.get("bp")
+        for m in matchs_dom
+    ])
 
-    if home_glob:
-        hbp_g = moy_glob_h["bp"]
-        hbc_g = moy_glob_h["bc"]
+    bc_dom = moy([
+        m.get("bc")
+        for m in matchs_dom
+    ])
+
+    bp_ext = moy([
+        m.get("bp")
+        for m in matchs_ext
+    ])
+
+    bc_ext = moy([
+        m.get("bc")
+        for m in matchs_ext
+    ])
+
+    lh_brut = (
+        bp_dom
+        + bc_ext
+    ) / 2.0
+
+    la_brut = (
+        bp_ext
+        + bc_dom
+    ) / 2.0
+
+    f_dom_classement, f_ext_classement = facteur_classement(
+        pos_dom,
+        pos_ext,
+        total_equipes,
+    )
+
+    lh_brut *= f_dom_classement
+    la_brut *= f_ext_classement
+
+    lh_brut *= facteur_forme_recente(
+        matchs_dom
+    )
+
+    la_brut *= facteur_forme_recente(
+        matchs_ext
+    )
+
+    f_h2h_dom, f_h2h_ext = facteur_h2h(
+        h2h_matchs
+    )
+
+    lh_brut *= f_h2h_dom
+    la_brut *= f_h2h_ext
+
+    lh_brut *= facteur_blessures(
+        blessures_dom
+    )
+
+    lh_brut *= facteur_blessures(
+        blessures_ext
+    )
+
+    lh_brut *= facteur_fatigue(
+        fatigue_dom
+    )
+
+    la_brut *= facteur_fatigue(
+        fatigue_ext
+    )
+
+    meteo = contexte.get(
+        "meteo",
+        "normale",
+    )
+
+    enjeu = contexte.get(
+        "enjeu",
+        "normal",
+    )
+
+    lh_brut *= facteur_meteo(
+        meteo
+    )
+
+    la_brut *= facteur_meteo(
+        meteo
+    )
+
+    lh_brut *= facteur_enjeu(
+        enjeu
+    )
+
+    la_brut *= facteur_enjeu(
+        enjeu
+    )
+
+    f_ht = facteur_ht(
+        matchs_dom + matchs_ext
+    )
+
+    lh_brut *= f_ht
+    la_brut *= f_ht
+
+    lambda_home = max(
+        lh_brut,
+        0.05,
+    )
+
+    lambda_away = max(
+        la_brut,
+        0.05,
+    )
+
+    matrix = compute_score_matrix(
+        lambda_home,
+        lambda_away,
+    )
+
+    p1, px, p2 = compute_1x2(
+        matrix
+    )
+
+    lambda_total = (
+        lambda_home
+        + lambda_away
+    )
+
+    resultat = {
+        "match": nom_match,
+        "lambda_home": round(
+            lambda_home,
+            4,
+        ),
+        "lambda_away": round(
+            lambda_away,
+            4,
+        ),
+        "lambda_total": round(
+            lambda_total,
+            4,
+        ),
+        "probabilites_1x2": {
+            "1": round(p1, 4),
+            "X": round(px, 4),
+            "2": round(p2, 4),
+        },
+        "score_matrix": matrix,
+    }
+
+    c1 = eval_candidat_simple(
+        "Domicile",
+        p1,
+        cotes.get("1"),
+        "1X2",
+    )
+
+    cx = eval_candidat_simple(
+        "Nul",
+        px,
+        cotes.get("X"),
+        "1X2",
+    )
+
+    c2 = eval_candidat_simple(
+        "Exterieur",
+        p2,
+        cotes.get("2"),
+        "1X2",
+    )
+
+    candidats_1x2 = [
+        c for c in [c1, cx, c2]
+        if c is not None
+    ]
+
+    resultat["marches"] = {
+        "1x2": candidats_1x2,
+    }
+
+    ratio_ht = compute_ratio_ht(
+        matchs_dom + matchs_ext
+    )
+
+    candidats_ou = []
+
+    lignes_ou = [
+        (
+            1.5,
+            cotes.get("over_1_5"),
+            cotes.get("under_1_5"),
+        ),
+        (
+            2.5,
+            cotes.get("over_2_5"),
+            cotes.get("under_2_5"),
+        ),
+        (
+            3.5,
+            cotes.get("over_3_5"),
+            cotes.get("under_3_5"),
+        ),
+    ]
+
+    for ligne, cote_over, cote_under in lignes_ou:
+        ou_result = calcul_ou_complet_from_signature(
+            matchs_dom,
+            matchs_ext,
+            cote_over,
+            cote_under,
+            ligne,
+            contexte,
+        )
+
+        candidats_ou.extend(
+            ou_result["candidats"]
+        )
+
+    resultat["marches"]["over_under"] = candidats_ou
+
+    handicap = calcul_handicap_complet(
+        matrix,
+        cotes.get("ah_dom"),
+        cotes.get("ah_ext"),
+        cotes.get("ah_ligne", 0),
+    )
+
+    resultat["marches"]["handicap"] = handicap
+
+    marches_2mt = calcul_marches_2mt(
+        lambda_total,
+        ratio_ht,
+        cotes.get("over_ht"),
+        cotes.get("under_ht"),
+        cotes.get("btts"),
+    )
+
+    resultat["marches"]["mi_temps_btts"] = marches_2mt
+
+    tous_candidats = []
+
+    tous_candidats.extend(
+        candidats_1x2
+    )
+
+    tous_candidats.extend(
+        candidats_ou
+    )
+
+    tous_candidats.extend(
+        handicap.get(
+            "candidats",
+            [],
+        )
+    )
+
+    tous_candidats.extend(
+        marches_2mt.get(
+            "candidats",
+            [],
+        )
+    )
+
+    if tous_candidats:
+        candidats_valides = [
+            c for c in tous_candidats
+            if c is not None
+        ]
+
+        candidats_valides.sort(
+            key=lambda x: (
+                x.get("ev", 0.0),
+                x.get("fiabilite", 0.0),
+            ),
+            reverse=True,
+        )
+
+        resultat["meilleurs_candidats"] = (
+            candidats_valides[:5]
+        )
+
     else:
-        hbp_g = hbp_ctx
-        hbc_g = hbc_ctx
+        resultat["meilleurs_candidats"] = []
 
-    if away_glob:
-        abp_g = moy_glob_a["bp"]
-        abc_g = moy_glob_a["bc"]
-    else:
-        abp_g = abp_ctx
-        abc_g = abc_ctx
+    cote_1 = cotes.get("1")
+    cote_x = cotes.get("X")
+    cote_2 = cotes.get("2")
 
-    hbp = fusion_ponderee(hbp_ctx, hbp_g, 0.7)
-    hbc = fusion_ponderee(hbc_ctx, hbc_g, 0.7)
-    abp = fusion_ponderee(abp_ctx, abp_g, 0.7)
-    abc = fusion_ponderee(abc_ctx, abc_g, 0.7)
+    marche_1x2 = [
+        c for c in [
+            cote_1,
+            cote_x,
+            cote_2,
+        ]
+        if c is not None
+        and c > 0
+    ]
 
-    lh_brut = (hbp + abc) / 2.0
-    la_brut = (abp + hbc) / 2.0
+    resultat["marche"] = {
+        "probabilites_implicites": (
+            demargeage_proportionnel(
+                marche_1x2
+            )
+            if marche_1x2
+            else None
+        ),
+    }
 
+    if cote_1 and cote_1 > 0:
+        resultat["divergences_1"] = detecter_divergences(
+            p1,
+            1.0 / cote_1,
+        )
 
-fht_h = facteur_ht(home_ctx)
-fht_a = facteur_ht(away_ctx)
-lh_brut *= fht_h
-la_brut *= fht_a
+    if cote_x and cote_x > 0:
+        resultat["divergences_X"] = detecter_divergences(
+            px,
+            1.0 / cote_x,
+        )
 
-ff_h = facteur_forme_recente(home_ctx)
-ff_a = facteur_forme_recente(away_ctx)
-lh_brut *= ff_h
-la_brut *= ff_a
+    if cote_2 and cote_2 > 0:
+        resultat["divergences_2"] = detecter_divergences(
+            p2,
+            1.0 / cote_2,
+        )
 
-fc_h, fc_a = facteur_classement(pos_dom, pos_ext, total_equipes)
-lh_brut *= fc_h
-la_brut *= fc_a
+    try:
+        signature_foot = analyser_signature_foot(
+            matchs_dom,
+            matchs_ext,
+            contexte,
+        )
 
-fh2h_h, fh2h_a = facteur_h2h(h2h_matchs)
-lh_brut *= fh2h_h
-la_brut *= fh2h_a
+        resultat["signature_foot"] = signature_foot
 
-fcomm = facteur_meteo(meteo) * facteur_enjeu(enjeu)
-lh_brut *= fcomm
-la_brut *= fcomm
+    except Exception as e:
+        resultat["signature_foot"] = {
+            "erreur": str(e),
+        }
 
-lh_brut *= facteur_blessures(blessures_dom)
-la_brut *= facteur_blessures(blessures_ext)
-lh_brut *= facteur_fatigue(fatigue_dom)
-la_brut *= facteur_fatigue(fatigue_ext)
+    try:
+        forensics = analyser_market_forensics(
+            resultat,
+            cotes,
+            contexte,
+        )
 
-lh_brut = max(lh_brut, 0.1)
-la_brut = max(la_brut, 0.1)
+        resultat["market_forensics"] = forensics
 
-signature = analyser_signature_foot(lh_brut, la_brut, ligue=ligue, n_mc=10000, rho=-0.05)
+    except Exception as e:
+        resultat["market_forensics"] = {
+            "erreur": str(e),
+        }
 
-ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
-forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
-regime = analyser_regime(forensics)
+    try:
+        stacking = analyser_meta_ensemble(
+            resultat,
+            contexte,
+        )
 
-forensics_sharpe = 0.0
-if forensics and forensics.get("disponible"):
-    forensics_sharpe = forensics["sharpe_signal"]["sharpe_signal"]
+        resultat["meta_ensemble"] = stacking
 
-contexte_stack = {
-    "volatilite": 0.4,
-    "ecart_forces": ecart_forces_norm,
-    "ligue": ligue or "autre",
-    "forensics_sharpe": forensics_sharpe,
-}
+    except Exception as e:
+        resultat["meta_ensemble"] = {
+            "erreur": str(e),
+        }
 
-stacking = analyser_meta_ensemble(
-    signature["probas_poisson"],
-    signature["probas_dc"],
-    signature["probas_mc"],
-    signature["probas_bayes"],
-    contexte_stack,
-)
+    try:
+        cross_market = analyser_cross_market(
+            resultat,
+            cotes,
+        )
 
-lh = signature["lambda_home_bayesien"]
-la = signature["lambda_away_bayesien"]
-matrix = signature["matrix_dc"]
+        resultat["cross_market"] = cross_market
 
-p1 = stacking["p1_final"]
-px = stacking["px_final"]
-p2 = stacking["p2_final"]
+    except Exception as e:
+        resultat["cross_market"] = {
+            "erreur": str(e),
+        }
 
-ev1 = compute_ev(p1, curr_1)
-evx = compute_ev(px, curr_x) if curr_x > 0 else -1.0
-ev2 = compute_ev(p2, curr_2)
+    try:
+        regime = analyser_regime(
+            matchs_dom,
+            matchs_ext,
+            contexte,
+        )
 
-f1 = compute_reliability(p1, curr_1, ev1)
-if curr_x > 0:
-    fx = compute_reliability(px, curr_x, evx)
-else:
-    fx = 0.0
-f2 = compute_reliability(p2, curr_2, ev2)
+        resultat["regime"] = regime
 
-candidats = [
-    {"selection": "1 (Domicile)", "p": p1, "cote": curr_1, "ev": ev1, "fiabilite": f1, "type": "1X2"},
-    {"selection": "X (Nul)", "p": px, "cote": curr_x, "ev": evx, "fiabilite": fx, "type": "1X2"},
-    {"selection": "2 (Exterieur)", "p": p2, "cote": curr_2, "ev": ev2, "fiabilite": f2, "type": "1X2"},
-]
+    except Exception as e:
+        resultat["regime"] = {
+            "erreur": str(e),
+        }
 
-for c in candidats:
-    passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
-    c["passe_filtres"] = passe
-    c["raisons_rejet"] = raisons
-    dec, niv = classify_decision(c["fiabilite"], c["ev"])
-    c["decision"] = dec
-    c["niveau"] = niv
-    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
-    c = appliquer_forensics_au_candidat(c, forensics)
-    c = appliquer_stacking_au_candidat(c, stacking)
+    try:
+        moy_dom = extraire_moyennes_ponderees(
+            matchs_dom
+        )
 
-handicap_resultats = calcul_handicap_complet(matrix, handicap_lignes)
-ou_resultats = calcul_ou_complet_from_signature(signature, ou_lignes)
+        moy_ext = extraire_moyennes_ponderees(
+            matchs_ext
+        )
 
-for h in handicap_resultats:
-    h = appliquer_forensics_au_candidat(h, forensics)
-    h = appliquer_stacking_au_candidat(h, stacking)
-for o in ou_resultats:
-    o = appliquer_forensics_au_candidat(o, forensics)
-    o = appliquer_stacking_au_candidat(o, stacking)
+        resultat["time_decay"] = {
+            "dom": moy_dom,
+            "ext": moy_ext,
+        }
 
-cross_market = analyser_cross_market(
-    candidats, handicap_resultats, ou_resultats, [],
-    mu_total_ref=(lh + la)
-)
+    except Exception as e:
+        resultat["time_decay"] = {
+            "erreur": str(e),
+        }
 
-for c in candidats:
-    fiab_avant = c["fiabilite"]
-    fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
-    c["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
-    c["fiabilite"] = fiab_apres
-    dec, niv = classify_decision(c["fiabilite"], c["ev"])
-    c["decision"] = dec
-    c["niveau"] = niv
-    p_f, r_f = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
-    c["passe_filtres"] = p_f
-    c["raisons_rejet"] = r_f
-    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if p_f else 0.0
+    resultat["diagnostic"] = {
+        "nb_matchs_dom": len(matchs_dom),
+        "nb_matchs_ext": len(matchs_ext),
+        "nb_h2h": len(h2h_matchs),
+        "ratio_ht": round(
+            ratio_ht,
+            4,
+        ),
+        "meteo": meteo,
+        "enjeu": enjeu,
+        "lambda_total": round(
+            lambda_total,
+            4,
+        ),
+    }
 
-for h in handicap_resultats:
-    fiab_avant = h["fiabilite"]
-    fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
-    h["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
-    h["fiabilite"] = fiab_apres
-    dec, niv = classify_decision(h["fiabilite"], h["ev"])
-    h["decision"] = dec
-    h["niveau"] = niv
-    p_f, r_f = appliquer_filtres_discipline(h["p"], h["cote"], h["ev"], h["fiabilite"])
-    h["passe_filtres"] = p_f
-    h["raisons_rejet"] = r_f
-    h["stake"] = compute_stake(h["p"], h["cote"], h["fiabilite"], h["ev"]) if p_f else 0.0
-
-for o in ou_resultats:
-    fiab_avant = o["fiabilite"]
-    fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
-    o["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
-    o["fiabilite"] = fiab_apres
-    dec, niv = classify_decision(o["fiabilite"], o["ev"])
-    o["decision"] = dec
-    o["niveau"] = niv
-    p_f, r_f = appliquer_filtres_discipline(o["p"], o["cote"], o["ev"], o["fiabilite"])
-    o["passe_filtres"] = p_f
-    o["raisons_rejet"] = r_f
-    o["stake"] = compute_stake(o["p"], o["cote"], o["fiabilite"], o["ev"]) if p_f else 0.0
-
-ratio_ht_h = compute_ratio_ht(home_ctx)
-ratio_ht_a = compute_ratio_ht(away_ctx)
-lambda_ht_h = lh * ratio_ht_h
-lambda_ht_a = la * ratio_ht_a
-lambda_2h_h = lh * (1 - ratio_ht_h)
-lambda_2h_a = la * (1 - ratio_ht_a)
-
-marches_2mt = calcul_marches_2mt(lambda_ht_h, lambda_ht_a, lambda_2h_h, lambda_2h_a, cotes_ht, cotes_2h)
-
-for c in marches_2mt.get("ht", []):
-    c = appliquer_forensics_au_candidat(c, forensics)
-    c = appliquer_stacking_au_candidat(c, stacking)
-for c in marches_2mt.get("2h", []):
-    c = appliquer_forensics_au_candidat(c, forensics)
-    c = appliquer_stacking_au_candidat(c, stacking)
-
-
-tous = []
-for c in candidats:
-    tous.append(c)
-for h in handicap_resultats:
-    h["selection"] = "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")"
-    h["type"] = "Handicap"
-    tous.append(h)
-for o in ou_resultats:
-    o["selection"] = o.get("type_ou", "O/U") + " " + str(o.get("ligne", ""))
-    o["type"] = "O/U"
-    tous.append(o)
-for c in marches_2mt.get("ht", []):
-    c["type"] = "1X2 HT"
-    tous.append(c)
-for c in marches_2mt.get("2h", []):
-    c["type"] = "1X2 2H"
-    tous.append(c)
-
-tous.sort(key=lambda x: x["fiabilite"], reverse=True)
-
-pari_retenu = None
-for c in tous:
-    if c["passe_filtres"] and c["stake"] > 0:
-        pari_retenu = c
-        break
-
-ou_securite = None
-if ou_resultats:
-    passes = [o for o in ou_resultats if o["passe_filtres"]]
-    if passes:
-        ou_securite = max(passes, key=lambda x: x["fiabilite"])
-    else:
-        ou_securite = max(ou_resultats, key=lambda x: x["fiabilite"])
-    if pari_retenu and ou_securite:
-        meme_marche = pari_retenu.get("marche") == ou_securite.get("marche")
-        meme_selection = pari_retenu.get("selection") == ou_securite.get("selection")
-        if meme_marche and meme_selection:
-            ou_securite = None
-    if ou_securite and ou_securite["fiabilite"] < 0.60:
-        ou_securite = None
-
-top_scores = sorted(matrix.items(), key=lambda x: x[1], reverse=True)[:3]
-top_3 = []
-for idx, (sc, pr) in enumerate(top_scores):
-    top_3.append({
-        "rank": idx + 1,
-        "score": str(sc[0]) + "-" + str(sc[1]),
-        "probability": round(pr, 4),
-    })
-
-cotes_dict = {"curr_1": curr_1, "curr_x": curr_x, "curr_2": curr_2}
-r_temp = {
-    "p1": p1,
-    "px": px,
-    "p2": p2,
-    "handicap_resultats": handicap_resultats,
-    "ou_resultats": ou_resultats,
-}
-divergences = detecter_divergences(r_temp, cotes_dict)
-
-details = {
-    "home_bp_ctx": round(hbp_ctx, 2),
-    "home_bp_glob": round(hbp_g, 2),
-    "away_bp_ctx": round(abp_ctx, 2),
-    "away_bp_glob": round(abp_g, 2),
-    "ratio_ht_home": round(ratio_ht_h, 3),
-    "ratio_ht_away": round(ratio_ht_a, 3),
-    "f_ht_home": round(fht_h, 3),
-    "f_ht_away": round(fht_a, 3),
-    "f_forme_home": round(ff_h, 3),
-    "f_forme_away": round(ff_a, 3),
-    "f_class_home": fc_h,
-    "f_class_away": fc_a,
-    "f_h2h_home": fh2h_h,
-    "f_h2h_away": fh2h_a,
-    "f_meteo": round(facteur_meteo(meteo), 3),
-    "f_enjeu": round(facteur_enjeu(enjeu), 3),
-    "f_bless_dom": facteur_blessures(blessures_dom),
-    "f_bless_ext": facteur_blessures(blessures_ext),
-    "f_fatigue_dom": facteur_fatigue(fatigue_dom),
-    "f_fatigue_ext": facteur_fatigue(fatigue_ext),
-    "f_commun": round(fcomm, 3),
-}
-
-signature_dict = {
-    "prior_ligue": signature["prior_ligue"],
-    "lambda_home_brut": signature["lambda_home_brut"],
-    "lambda_away_brut": signature["lambda_away_brut"],
-    "lambda_home_bayesien": signature["lambda_home_bayesien"],
-    "lambda_away_bayesien": signature["lambda_away_bayesien"],
-    "rho": signature["rho"],
-    "methode": signature["methode"],
-    "n_simulations": signature["n_simulations"],
-    "ic_p1": signature["ic_p1"],
-    "ic_px": signature["ic_px"],
-    "ic_p2": signature["ic_p2"],
-    "stab_p1": signature["stab_p1"],
-    "stab_px": signature["stab_px"],
-    "stab_p2": signature["stab_p2"],
-    "p_btts_oui_dc": signature["p_btts_oui_dc"],
-    "p_btts_non_dc": signature["p_btts_non_dc"],
-}
-
-resultat = {}
-resultat["lambda_home"] = round(lh, 2)
-resultat["lambda_away"] = round(la, 2)
-resultat["lambda_home_brut"] = round(lh_brut, 2)
-resultat["lambda_away_brut"] = round(la_brut, 2)
-resultat["lambda_ht_home"] = round(lambda_ht_h, 2)
-resultat["lambda_ht_away"] = round(lambda_ht_a, 2)
-resultat["lambda_2h_home"] = round(lambda_2h_h, 2)
-resultat["lambda_2h_away"] = round(lambda_2h_a, 2)
-resultat["details"] = details
-resultat["signature"] = signature_dict
-resultat["forensics"] = forensics
-resultat["regime"] = regime
-resultat["time_decay"] = {
-    "home_bp_ctx_pond": moy_ctx_h["bp"],
-    "home_bp_glob_pond": moy_glob_h["bp"],
-    "away_bp_ctx_pond": moy_ctx_a["bp"],
-    "away_bp_glob_pond": moy_glob_a["bp"],
-}
-resultat["stacking"] = stacking
-resultat["cross_market"] = cross_market
-resultat["p1"] = round(p1, 4)
-resultat["px"] = round(px, 4)
-resultat["p2"] = round(p2, 4)
-resultat["ev1"] = round(ev1, 4)
-resultat["evx"] = round(evx, 4)
-resultat["ev2"] = round(ev2, 4)
-resultat["f1"] = f1
-resultat["fx"] = fx
-resultat["f2"] = f2
-resultat["candidats"] = candidats
-resultat["handicap_resultats"] = handicap_resultats
-resultat["ou_resultats"] = ou_resultats
-resultat["marches_2mt"] = marches_2mt
-resultat["ou_securite"] = ou_securite
-resultat["pari_retenu"] = pari_retenu
-resultat["top_3_scores"] = top_3
-resultat["divergences"] = divergences
-
-return resultat
+    return resultat
