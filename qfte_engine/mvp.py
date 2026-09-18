@@ -841,7 +841,7 @@ def analyser_match_football(
     resultat["details"] = details
     resultat["signature"] = signature_dict
     resultat["forensics"] = forensics
-    résultat["regime"] = regime
+    resultat["regime"] = regime
     resultat["stacking"] = stacking
     resultat["cross_market"] = cross_market
     resultat["p1"] = round(p1, 4)
