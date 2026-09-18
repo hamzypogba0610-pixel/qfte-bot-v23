@@ -2914,7 +2914,7 @@ def analyser_match_football(
         cotes_2h=None,
                  )
 
-tous_candidats = []
+    tous_candidats = []
 
     tous_candidats.extend(
         candidats_1x2
