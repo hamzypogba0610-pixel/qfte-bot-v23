@@ -270,6 +270,16 @@ async def health():
 
 @app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
+    try:
+        return await _analyser_interne(request)
+    except Exception as e:
+        import traceback
+        err = traceback.format_exc()
+        err = err.replace("<", "&lt;").replace(">", "&gt;")
+        return HTMLResponse(content="<pre style='background:#000;color:#4ade80;padding:20px;font-size:12px;white-space:pre-wrap;'>ERREUR :\n\n" + err + "</pre>")
+
+
+async def _analyser_interne(request: Request):
     form = await request.form()
 
     sport = form.get("sport", "football")
