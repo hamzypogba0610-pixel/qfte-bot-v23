@@ -2,24 +2,12 @@
 qfte_engine/mvp.py
 ==================
 
-QFTE V23.0 — Moteur Football
+QFTE V23.0 — Moteur principal
 
 Interface compatible avec main.py V23.0.
-
-Objectifs :
-- conserver les briques QFTE existantes ;
-- accepter l'appel football V23.0 à 25 paramètres ;
-- produire les anciennes clés attendues par main.py ;
-- exposer également les structures modernes V23 ;
-- sécuriser les interfaces avec les modules spécialisés.
 """
 
 import math
-
-
-# ============================================================
-# IMPORTS MODULES QFTE
-# ============================================================
 
 try:
     from qfte_engine.signature_foot import (
@@ -30,7 +18,6 @@ except Exception:
     analyser_signature_foot = None
     calculer_over_under_avec_ic = None
 
-
 try:
     from qfte_engine.forensics import (
         analyser_market_forensics,
@@ -39,7 +26,6 @@ try:
 except Exception:
     analyser_market_forensics = None
     ajuster_fiabilite = None
-
 
 try:
     from qfte_engine.stacking import (
@@ -50,7 +36,6 @@ except Exception:
     analyser_meta_ensemble = None
     ajuster_fiabilite_pcs = None
 
-
 try:
     from qfte_engine.cross_market import (
         analyser_cross_market,
@@ -60,12 +45,10 @@ except Exception:
     analyser_cross_market = None
     ajuster_fiabilite_consistency = None
 
-
 try:
     from qfte_engine.regime import analyser_regime
 except Exception:
     analyser_regime = None
-
 
 try:
     from qfte_engine.time_decay import (
@@ -77,25 +60,13 @@ except Exception:
     fusion_ponderee = None
 
 
-# ============================================================
-# CONSTANTES
-# ============================================================
-
 SEUIL_FIABILITE = 0.75
 SEUIL_VALUE_1X2 = 0.05
 SEUIL_CONFIANCE = 0.70
-
 EPS = 1e-9
 
 
-# ============================================================
-# OUTILS NUMÉRIQUES
-# ============================================================
-
 def _safe_float(value, default=0.0):
-    """
-    Conversion robuste en float.
-    """
     try:
         if value is None:
             return default
@@ -114,20 +85,21 @@ def _safe_float(value, default=0.0):
         return default
 
 
-def _clamp(value, minimum=0.0, maximum=1.0):
-    """
-    Limite une valeur à un intervalle.
-    """
+def _clamp(
+    value,
+    minimum=0.0,
+    maximum=1.0,
+):
     return max(
         minimum,
-        min(maximum, _safe_float(value)),
+        min(
+            maximum,
+            _safe_float(value),
+        ),
     )
 
 
 def _safe_list(value):
-    """
-    Garantit une liste.
-    """
     if value is None:
         return []
 
@@ -140,10 +112,10 @@ def _safe_list(value):
     return [value]
 
 
-def moy(values, default=0.0):
-    """
-    Moyenne robuste.
-    """
+def moy(
+    values,
+    default=0.0,
+):
     vals = []
 
     for value in _safe_list(values):
@@ -162,24 +134,36 @@ def moy(values, default=0.0):
     return sum(vals) / len(vals)
 
 
-# ============================================================
-# POISSON
-# ============================================================
+def poisson_pmf(
+    k,
+    lam,
+):
+    k = int(
+        max(
+            0,
+            k,
+        )
+    )
 
-def poisson_pmf(k, lam):
-    """
-    Probabilité de Poisson P(X=k).
-    """
-    k = int(max(0, k))
-    lam = max(0.0, _safe_float(lam))
+    lam = max(
+        0.0,
+        _safe_float(lam),
+    )
 
     if lam == 0:
-        return 1.0 if k == 0 else 0.0
+        return (
+            1.0
+            if k == 0
+            else 0.0
+        )
 
     try:
         return math.exp(
-            -lam + k * math.log(lam) - math.lgamma(k + 1)
+            -lam
+            + k * math.log(lam)
+            - math.lgamma(k + 1)
         )
+
     except Exception:
         return 0.0
 
@@ -189,10 +173,6 @@ def compute_score_matrix(
     lambda_away,
     max_goals=8,
 ):
-    """
-    Matrice des scores exacts selon deux lois de Poisson.
-    """
-
     lambda_home = max(
         0.0,
         _safe_float(lambda_home),
@@ -209,23 +189,38 @@ def compute_score_matrix(
     )
 
     home_probs = [
-        poisson_pmf(i, lambda_home)
-        for i in range(max_goals + 1)
+        poisson_pmf(
+            i,
+            lambda_home,
+        )
+        for i in range(
+            max_goals + 1
+        )
     ]
 
     away_probs = [
-        poisson_pmf(j, lambda_away)
-        for j in range(max_goals + 1)
+        poisson_pmf(
+            j,
+            lambda_away,
+        )
+        for j in range(
+            max_goals + 1
+        )
     ]
 
     matrix = []
 
-    for i in range(max_goals + 1):
+    for i in range(
+        max_goals + 1
+    ):
         row = []
 
-        for j in range(max_goals + 1):
+        for j in range(
+            max_goals + 1
+        ):
             row.append(
-                home_probs[i] * away_probs[j]
+                home_probs[i]
+                * away_probs[j]
             )
 
         matrix.append(row)
@@ -248,21 +243,24 @@ def compute_score_matrix(
 
 
 def compute_1x2(matrix):
-    """
-    Conversion d'une matrice de scores en probabilités 1X2.
-    """
-
     p1 = 0.0
     px = 0.0
     p2 = 0.0
 
     if not matrix:
-        return 0.0, 0.0, 0.0
+        return (
+            0.0,
+            0.0,
+            0.0,
+        )
 
     for i, row in enumerate(matrix):
+
         for j, probability in enumerate(row):
 
-            probability = _safe_float(probability)
+            probability = _safe_float(
+                probability
+            )
 
             if i > j:
                 p1 += probability
@@ -273,42 +271,30 @@ def compute_1x2(matrix):
             else:
                 p2 += probability
 
-    total = p1 + px + p2
+    total = (
+        p1
+        + px
+        + p2
+    )
 
     if total > EPS:
         p1 /= total
         px /= total
         p2 /= total
 
-    return p1, px, p2
+    return (
+        p1,
+        px,
+        p2,
+    )
 
-
-# ============================================================
-# RATIO HT
-# ============================================================
 
 def compute_ratio_ht(x):
-    """
-    Ratio structurel de production en première période.
-
-    IMPORTANT :
-    cette fonction accepte UN SEUL argument.
-
-    Cela correspond à la signature actuellement présente
-    dans le moteur reconstruit.
-
-    x peut être :
-    - lambda total ;
-    - valeur numérique assimilée au potentiel de buts.
-    """
-
     x = max(
         0.0,
         _safe_float(x),
     )
 
-    # Ratio de base légèrement dépendant du niveau
-    # de production totale.
     if x <= 1.0:
         ratio = 0.45
 
@@ -331,20 +317,11 @@ def compute_ratio_ht(x):
     )
 
 
-# ============================================================
-# DEMARGEAGE
-# ============================================================
-
 def demargeage_proportionnel(
     cote_1,
     cote_x,
     cote_2,
 ):
-    """
-    Convertit des cotes 1X2 en probabilités sans marge
-    par normalisation proportionnelle.
-    """
-
     odds = [
         _safe_float(cote_1),
         _safe_float(cote_x),
@@ -354,8 +331,12 @@ def demargeage_proportionnel(
     implied = []
 
     for odd in odds:
+
         if odd > 1.0:
-            implied.append(1.0 / odd)
+            implied.append(
+                1.0 / odd
+            )
+
         else:
             implied.append(0.0)
 
@@ -373,24 +354,20 @@ def demargeage_proportionnel(
         "1": implied[0] / total,
         "X": implied[1] / total,
         "2": implied[2] / total,
-        "marge": max(0.0, total - 1.0),
+        "marge": max(
+            0.0,
+            total - 1.0,
+        ),
     }
 
-
-# ============================================================
-# HANDICAP
-# ============================================================
 
 def proba_handicap_dom(
     matrix,
     handicap=0.0,
 ):
-    """
-    Probabilité du côté domicile sur handicap asiatique
-    simplifié.
-    """
-
-    handicap = _safe_float(handicap)
+    handicap = _safe_float(
+        handicap
+    )
 
     win = 0.0
     push = 0.0
@@ -399,8 +376,15 @@ def proba_handicap_dom(
 
         for j, probability in enumerate(row):
 
-            diff = i - j + handicap
-            probability = _safe_float(probability)
+            diff = (
+                i
+                - j
+                + handicap
+            )
+
+            probability = _safe_float(
+                probability
+            )
 
             if diff > EPS:
                 win += probability
@@ -422,11 +406,9 @@ def proba_handicap_ext(
     matrix,
     handicap=0.0,
 ):
-    """
-    Probabilité du côté extérieur sur handicap simplifié.
-    """
-
-    handicap = _safe_float(handicap)
+    handicap = _safe_float(
+        handicap
+    )
 
     win = 0.0
     push = 0.0
@@ -435,8 +417,15 @@ def proba_handicap_ext(
 
         for j, probability in enumerate(row):
 
-            diff = j - i + handicap
-            probability = _safe_float(probability)
+            diff = (
+                j
+                - i
+                + handicap
+            )
+
+            probability = _safe_float(
+                probability
+            )
 
             if diff > EPS:
                 win += probability
@@ -454,16 +443,11 @@ def proba_handicap_ext(
     }
 
 
-# ============================================================
-# FACTEURS CONTEXTUELS
-# ============================================================
-
 def facteur_meteo(meteo):
-    """
-    Facteur météo.
-    """
-
-    if isinstance(meteo, (int, float)):
+    if isinstance(
+        meteo,
+        (int, float),
+    ):
         return _clamp(
             float(meteo),
             0.85,
@@ -510,11 +494,10 @@ def facteur_meteo(meteo):
 
 
 def facteur_enjeu(enjeu):
-    """
-    Ajustement léger lié à l'enjeu.
-    """
-
-    if isinstance(enjeu, (int, float)):
+    if isinstance(
+        enjeu,
+        (int, float),
+    ):
         return _clamp(
             float(enjeu),
             0.90,
@@ -549,12 +532,15 @@ def facteur_enjeu(enjeu):
 
 
 def facteur_blessures(value):
-    """
-    Facteur blessures.
-    """
-
-    if isinstance(value, bool):
-        return 0.96 if value else 1.00
+    if isinstance(
+        value,
+        bool,
+    ):
+        return (
+            0.96
+            if value
+            else 1.00
+        )
 
     value = _safe_float(
         value,
@@ -572,12 +558,15 @@ def facteur_blessures(value):
 
 
 def facteur_fatigue(value):
-    """
-    Facteur fatigue.
-    """
-
-    if isinstance(value, bool):
-        return 0.96 if value else 1.00
+    if isinstance(
+        value,
+        bool,
+    ):
+        return (
+            0.96
+            if value
+            else 1.00
+        )
 
     value = _safe_float(
         value,
@@ -599,23 +588,34 @@ def facteur_classement(
     pos_ext=None,
     total_equipes=None,
 ):
-    """
-    Ajustement faible basé sur l'écart de classement.
-    """
-
-    if pos_dom is None or pos_ext is None:
+    if (
+        pos_dom is None
+        or pos_ext is None
+    ):
         return 1.00
 
-    pos_dom = _safe_float(pos_dom)
-    pos_ext = _safe_float(pos_ext)
+    pos_dom = _safe_float(
+        pos_dom
+    )
 
-    if pos_dom <= 0 or pos_ext <= 0:
+    pos_ext = _safe_float(
+        pos_ext
+    )
+
+    if (
+        pos_dom <= 0
+        or pos_ext <= 0
+    ):
         return 1.00
 
-    difference = pos_ext - pos_dom
+    difference = (
+        pos_ext
+        - pos_dom
+    )
 
-    adjustment = 1.0 + (
-        0.008 * difference
+    adjustment = (
+        1.0
+        + 0.008 * difference
     )
 
     return _clamp(
@@ -625,13 +625,7 @@ def facteur_classement(
     )
 
 
-def facteur_ht(
-    ratio_ht,
-):
-    """
-    Sécurisation du ratio HT.
-    """
-
+def facteur_ht(ratio_ht):
     return _clamp(
         ratio_ht,
         0.35,
@@ -643,16 +637,9 @@ def facteur_forme_recente(
     matchs,
     domicile=True,
 ):
-    """
-    Facteur forme récent simple.
-
-    Accepte des structures hétérogènes :
-    - dict avec buts marqués/encaissés ;
-    - tuples ;
-    - objets numériques.
-    """
-
-    matchs = _safe_list(matchs)
+    matchs = _safe_list(
+        matchs
+    )
 
     if not matchs:
         return 1.00
@@ -661,41 +648,63 @@ def facteur_forme_recente(
 
     for match in matchs:
 
-        if isinstance(match, dict):
+        if isinstance(
+            match,
+            dict,
+        ):
 
             gf = (
                 match.get("gf")
-                if match.get("gf") is not None
-                else match.get("goals_for")
+                if match.get("gf")
+                is not None
+                else match.get(
+                    "goals_for"
+                )
             )
 
             ga = (
                 match.get("ga")
-                if match.get("ga") is not None
-                else match.get("goals_against")
+                if match.get("ga")
+                is not None
+                else match.get(
+                    "goals_against"
+                )
             )
 
-            if gf is not None and ga is not None:
+            if (
+                gf is not None
+                and ga is not None
+            ):
                 scores.append(
                     _safe_float(gf)
                     - _safe_float(ga)
                 )
 
-        elif isinstance(match, (list, tuple)):
+        elif isinstance(
+            match,
+            (list, tuple),
+        ):
 
             if len(match) >= 2:
                 scores.append(
-                    _safe_float(match[0])
-                    - _safe_float(match[1])
+                    _safe_float(
+                        match[0]
+                    )
+                    - _safe_float(
+                        match[1]
+                    )
                 )
 
     if not scores:
         return 1.00
 
-    diff = moy(scores)
+    diff = moy(
+        scores
+    )
 
-    adjustment = 1.0 + (
-        0.025 * diff
+    adjustment = (
+        1.0
+        + 0.025 * diff
     )
 
     return _clamp(
@@ -704,16 +713,10 @@ def facteur_forme_recente(
         1.10,
     )
 
-
-def facteur_h2h(
-    h2h,
-):
-    """
-    Ajustement H2H très modéré afin d'éviter
-    le surpoids de l'historique ancien.
-    """
-
-    matchs = _safe_list(h2h)
+def facteur_h2h(h2h):
+    matchs = _safe_list(
+        h2h
+    )
 
     if not matchs:
         return 1.00
@@ -722,51 +725,67 @@ def facteur_h2h(
 
     for match in matchs:
 
-        if isinstance(match, dict):
+        if isinstance(
+            match,
+            dict,
+        ):
 
-            gf = match.get("gf")
-            ga = match.get("ga")
+            gf = match.get(
+                "gf"
+            )
 
-            if gf is not None and ga is not None:
+            ga = match.get(
+                "ga"
+            )
+
+            if (
+                gf is not None
+                and ga is not None
+            ):
                 differentiels.append(
                     _safe_float(gf)
                     - _safe_float(ga)
                 )
 
-        elif isinstance(match, (list, tuple)):
+        elif isinstance(
+            match,
+            (list, tuple),
+        ):
 
             if len(match) >= 2:
                 differentiels.append(
-                    _safe_float(match[0])
-                    - _safe_float(match[1])
+                    _safe_float(
+                        match[0]
+                    )
+                    - _safe_float(
+                        match[1]
+                    )
                 )
 
     if not differentiels:
         return 1.00
 
     return _clamp(
-        1.0 + 0.01 * moy(differentiels),
+        1.0
+        + 0.01 * moy(
+            differentiels
+        ),
         0.94,
         1.06,
     )
 
 
-# ============================================================
-# EV / FIABILITÉ / STAKE
-# ============================================================
-
 def compute_ev(
     probabilite,
     cote,
 ):
-    """
-    EV décimal :
-        p * cote - 1
-    """
+    p = _clamp(
+        probabilite
+    )
 
-    p = _clamp(probabilite)
-
-    cote = _safe_float(cote)
+    cote = _safe_float(
+        cote
+    )
 
     if cote <= 1.0:
         return 0.0
@@ -780,20 +799,25 @@ def compute_reliability(
     probabilite,
     cote=0.0,
 ):
-    """
-    Score de fiabilité simple combinant probabilité
-    et cohérence prix/probabilité.
-    """
+    p = _clamp(
+        probabilite
+    )
 
-    p = _clamp(probabilite)
-
-    cote = _safe_float(cote)
+    cote = _safe_float(
+        cote
+    )
 
     if cote > 1.0:
+
         implied = 1.0 / cote
-        coherence = 1.0 - abs(
-            p - implied
+
+        coherence = (
+            1.0
+            - abs(
+                p - implied
+            )
         )
+
     else:
         coherence = 0.50
 
@@ -812,10 +836,6 @@ def compute_stake(
     fiabilite,
     confiance=1.0,
 ):
-    """
-    Stake indicatif borné.
-    """
-
     ev = max(
         0.0,
         _safe_float(ev),
@@ -829,7 +849,9 @@ def compute_stake(
         confiance
     )
 
-    base = ev * 100.0
+    base = (
+        ev * 100.0
+    )
 
     stake = (
         base
@@ -847,31 +869,34 @@ def compute_stake(
     )
 
 
-# ============================================================
-# DISCIPLINE / DÉCISION
-# ============================================================
-
 def appliquer_filtres_discipline(
     candidat,
 ):
-    """
-    Filtre de discipline QFTE.
-    """
-
-    if not isinstance(candidat, dict):
+    if not isinstance(
+        candidat,
+        dict,
+    ):
         return None
 
-    candidat = dict(candidat)
+    candidat = dict(
+        candidat
+    )
 
     probabilite = _clamp(
         candidat.get(
             "probabilite",
-            candidat.get("proba", 0.0),
+            candidat.get(
+                "proba",
+                0.0,
+            ),
         )
     )
 
     cote = _safe_float(
-        candidat.get("cote", 0.0)
+        candidat.get(
+            "cote",
+            0.0,
+        )
     )
 
     ev = compute_ev(
@@ -889,11 +914,42 @@ def appliquer_filtres_discipline(
         )
     )
 
-    candidat["probabilite"] = probabilite
-    candidat["proba"] = probabilite
-    candidat["cote"] = cote
-    candidat["ev"] = ev
-    candidat["fiabilite"] = fiabilite
+    candidat["probabilite"] = (
+        probabilite
+    )
+
+    candidat["proba"] = (
+        probabilite
+    )
+
+    candidat["p"] = (
+        probabilite
+    )
+
+    candidat["cote"] = (
+        cote
+    )
+
+    candidat["ev"] = (
+        ev
+    )
+
+    candidat["fiabilite"] = (
+        fiabilite
+    )
+
+    candidat["stake"] = compute_stake(
+        ev,
+        fiabilite,
+    )
+
+    candidat["decision"] = (
+        classify_decision(
+            ev,
+            fiabilite,
+            probabilite,
+        )
+    )
 
     return candidat
 
@@ -903,18 +959,24 @@ def classify_decision(
     fiabilite,
     probabilite,
 ):
-    """
-    Classification décisionnelle.
-    """
+    ev = _safe_float(
+        ev
+    )
 
-    ev = _safe_float(ev)
-    fiabilite = _clamp(fiabilite)
-    probabilite = _clamp(probabilite)
+    fiabilite = _clamp(
+        fiabilite
+    )
+
+    probabilite = _clamp(
+        probabilite
+    )
 
     if (
         ev >= SEUIL_VALUE_1X2
-        and fiabilite >= SEUIL_FIABILITE
-        and probabilite >= SEUIL_CONFIANCE
+        and fiabilite
+        >= SEUIL_FIABILITE
+        and probabilite
+        >= SEUIL_CONFIANCE
     ):
         return "VALUE"
 
@@ -935,10 +997,6 @@ def eval_candidat_simple(
     ligne=None,
     direction=None,
 ):
-    """
-    Création standardisée d'un candidat QFTE.
-    """
-
     probabilite = _clamp(
         probabilite
     )
@@ -981,6 +1039,10 @@ def eval_candidat_simple(
             probabilite,
             4,
         ),
+        "p": round(
+            probabilite,
+            4,
+        ),
         "cote": round(
             cote,
             4,
@@ -996,6 +1058,7 @@ def eval_candidat_simple(
         "stake": stake,
         "decision": decision,
     }
+
 
 # ============================================================
 # BLOC 2A/2B
@@ -1369,16 +1432,6 @@ def calcul_ou_poisson(
 
         "distribution": probs,
         }
-
-# ============================================================
-# BLOC 2B/2B
-# SIGNATURE — MARCHÉS — HISTORIQUES — LAMBDAS
-# ============================================================
-
-
-# ============================================================
-# OVER / UNDER VIA SIGNATURE FOOT
-# ============================================================
 
 def calcul_ou_complet_from_signature(
     home,
@@ -2128,7 +2181,8 @@ def _selectionner_meilleur_candidat(
     return max(
         candidats,
         key=score,
-                )
+    )
+
 
 # ============================================================
 # BLOC 3A/3B
@@ -2247,7 +2301,6 @@ def _extraire_ligne_et_cotes(
                     })
 
     return resultats
-
 
 def _construire_ou_resultats(
     lambda_total,
@@ -2859,14 +2912,9 @@ def analyser_match_football(
         p2_2h,
         cotes_ht=None,
         cotes_2h=None,
-)
+                 )
 
-# ============================================================
-# BLOC 3B/3B
-# ANALYSEUR FOOTBALL — FINALISATION + COMPATIBILITÉ V23
-# ============================================================
-
-    tous_candidats = []
+tous_candidats = []
 
     tous_candidats.extend(
         candidats_1x2
@@ -2927,6 +2975,7 @@ def analyser_match_football(
             "selection": "NO BET",
             "probabilite": 0.0,
             "proba": 0.0,
+            "p": 0.0,                 # ← correction KeyError
             "cote": 0.0,
             "ev": 0.0,
             "fiabilite": 0.0,
@@ -2975,17 +3024,13 @@ def analyser_match_football(
                 "marche": "Under",
                 "selection": f"Under {ligne}",
                 "ligne": ligne,
-                "probabilite": round(
-                    p_under,
-                    4,
-                ),
+                "probabilite": round(p_under, 4),
+                "proba": round(p_under, 4),
+                "p": round(p_under, 4),
                 "fiabilite": round(
                     compute_reliability(
                         p_under,
-                        resultat.get(
-                            "cote_under",
-                            0.0,
-                        ),
+                        resultat.get("cote_under", 0.0),
                     ),
                     4,
                 ),
@@ -2997,17 +3042,13 @@ def analyser_match_football(
                 "marche": "Over",
                 "selection": f"Over {ligne}",
                 "ligne": ligne,
-                "probabilite": round(
-                    p_over,
-                    4,
-                ),
+                "probabilite": round(p_over, 4),
+                "proba": round(p_over, 4),
+                "p": round(p_over, 4),
                 "fiabilite": round(
                     compute_reliability(
                         p_over,
-                        resultat.get(
-                            "cote_over",
-                            0.0,
-                        ),
+                        resultat.get("cote_over", 0.0),
                     ),
                     4,
                 ),
@@ -3328,7 +3369,7 @@ def analyser_match_football(
         ),
 
         "px_2h": round(
-            px_2h,
+            p2_2h,
             4,
         ),
 
