@@ -241,7 +241,7 @@ def bloc_visuel(r, sport):
         html += '<h3 style="color:#f59e0b;margin-top:0;">🔬 SIGNATURE FOOT</h3>'
         sig = {}
         html += '<p>Ligue précédente : ' + str(sig.get("prior_ligue", "Non disponible")) + '</p>'
-        html += '<p>Lambda dom : ' + str(sigf["lambda_home_brut"]) + ' -> ' + str(sigf["lambda_home_bayesien"]) + '</p>'
+        html = "<p>Dom lambda : " + str(sigf.get("lambda_home_brut", "Non défini")) + " -> " + str(sigf.get("lambda_home_bayesien", "Non défini")) + "</p>"
         html += '<p>Lambda ext : ' + str(sigf["lambda_away_brut"]) + ' -> ' + str(sigf["lambda_away_bayesien"]) + '</p>'
         html += '</div>'
 
