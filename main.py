@@ -333,6 +333,7 @@ async def _analyser_interne(request: Request):
             html += '<p><b>Probabilite :</b> ' + str(round(p["p"] * 100, 2)) + '%</p>'
             html += '<p><b>EV :</b> ' + str(round(p["ev"] * 100, 2)) + '%</p>'
             html += '<p><b>Fiabilite :</b> ' + str(p["fiabilite"]) + '</p>'
+            print(type(pd), pd)
             html = f"<p><b>Niveau :</b> {pd.get('niveau', 'Non défini')}</p>"
             html += '<p><b>Decision :</b> ' + p["decision"] + '</p>'
             if p.get("stake_origine"):
