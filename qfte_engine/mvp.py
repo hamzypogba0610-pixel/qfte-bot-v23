@@ -2,7 +2,6 @@
 qfte_engine/mvp.py
 ------------------
 Moteur QFTE V23.0 - Football
-1X2 + Handicap + O/U + 2 mi-temps + Signature + Forensics + Stacking + Cross-Market.
 """
 
 import math
@@ -23,6 +22,7 @@ from qfte_engine.cross_market import (
     ajuster_fiabilite_consistency,
 )
 from qfte_engine.regime import analyser_regime
+from qfte_engine.time_decay import extraire_moyennes_ponderees, fusion_ponderee
 
 
 def poisson_pmf(k, lam):
@@ -78,6 +78,7 @@ def demargeage_proportionnel(cotes):
     if total <= 0:
         return None
     return [i/total for i in inv]
+
 
 
 def proba_handicap_dom(matrix, hcp):
@@ -392,6 +393,7 @@ def calcul_ou_complet_from_signature(signature_result, ou_lignes):
     return resultats
 
 
+
 def calcul_marches_2mt(lambda_ht_home, lambda_ht_away, lambda_2h_home, lambda_2h_away, cotes_ht, cotes_2h):
     resultats = {"ht": [], "2h": []}
     matrix_ht = compute_score_matrix(lambda_ht_home, lambda_ht_away)
@@ -516,7 +518,6 @@ def detecter_divergences(r, cotes_dict):
     return divergences
 
 
-
 def analyser_match_football(
     home_ctx, home_glob, away_ctx, away_glob,
     open_1, open_x, open_2, curr_1, curr_x, curr_2,
@@ -535,331 +536,344 @@ def analyser_match_football(
     if ou_lignes is None:
         ou_lignes = []
 
-    hbp_ctx = moy([m["bp"] for m in home_ctx])
-    hbc_ctx = moy([m["bc"] for m in home_ctx])
-    abp_ctx = moy([m["bp"] for m in away_ctx])
-    abc_ctx = moy([m["bc"] for m in away_ctx])
+    # ========================================
+    # TIME-DECAY : moyennes ponderees par rang
+    # ========================================
+    moy_ctx_h = extraire_moyennes_ponderees(home_ctx)
+    moy_ctx_a = extraire_moyennes_ponderees(away_ctx)
+    moy_glob_h = extraire_moyennes_ponderees(home_glob)
+    moy_glob_a = extraire_moyennes_ponderees(away_glob)
+
+    hbp_ctx = moy_ctx_h["bp"]
+    hbc_ctx = moy_ctx_h["bc"]
+    abp_ctx = moy_ctx_a["bp"]
+    abc_ctx = moy_ctx_a["bc"]
 
     if home_glob:
-        hbp_g = moy([m["bp"] for m in home_glob])
-        hbc_g = moy([m["bc"] for m in home_glob])
+        hbp_g = moy_glob_h["bp"]
+        hbc_g = moy_glob_h["bc"]
     else:
         hbp_g = hbp_ctx
         hbc_g = hbc_ctx
 
     if away_glob:
-        abp_g = moy([m["bp"] for m in away_glob])
-        abc_g = moy([m["bc"] for m in away_glob])
+        abp_g = moy_glob_a["bp"]
+        abc_g = moy_glob_a["bc"]
     else:
         abp_g = abp_ctx
         abc_g = abc_ctx
 
-    hbp = 0.7 * hbp_ctx + 0.3 * hbp_g
-    hbc = 0.7 * hbc_ctx + 0.3 * hbc_g
-    abp = 0.7 * abp_ctx + 0.3 * abp_g
-    abc = 0.7 * abc_ctx + 0.3 * abc_g
+    hbp = fusion_ponderee(hbp_ctx, hbp_g, 0.7)
+    hbc = fusion_ponderee(hbc_ctx, hbc_g, 0.7)
+    abp = fusion_ponderee(abp_ctx, abp_g, 0.7)
+    abc = fusion_ponderee(abc_ctx, abc_g, 0.7)
 
     lh_brut = (hbp + abc) / 2.0
     la_brut = (abp + hbc) / 2.0
 
-    fht_h = facteur_ht(home_ctx)
-    fht_a = facteur_ht(away_ctx)
-    lh_brut *= fht_h
-    la_brut *= fht_a
 
-    ff_h = facteur_forme_recente(home_ctx)
-    ff_a = facteur_forme_recente(away_ctx)
-    lh_brut *= ff_h
-    la_brut *= ff_a
+fht_h = facteur_ht(home_ctx)
+fht_a = facteur_ht(away_ctx)
+lh_brut *= fht_h
+la_brut *= fht_a
 
-    fc_h, fc_a = facteur_classement(pos_dom, pos_ext, total_equipes)
-    lh_brut *= fc_h
-    la_brut *= fc_a
+ff_h = facteur_forme_recente(home_ctx)
+ff_a = facteur_forme_recente(away_ctx)
+lh_brut *= ff_h
+la_brut *= ff_a
 
-    fh2h_h, fh2h_a = facteur_h2h(h2h_matchs)
-    lh_brut *= fh2h_h
-    la_brut *= fh2h_a
+fc_h, fc_a = facteur_classement(pos_dom, pos_ext, total_equipes)
+lh_brut *= fc_h
+la_brut *= fc_a
 
-    fcomm = facteur_meteo(meteo) * facteur_enjeu(enjeu)
-    lh_brut *= fcomm
-    la_brut *= fcomm
+fh2h_h, fh2h_a = facteur_h2h(h2h_matchs)
+lh_brut *= fh2h_h
+la_brut *= fh2h_a
 
-    lh_brut *= facteur_blessures(blessures_dom)
-    la_brut *= facteur_blessures(blessures_ext)
-    lh_brut *= facteur_fatigue(fatigue_dom)
-    la_brut *= facteur_fatigue(fatigue_ext)
+fcomm = facteur_meteo(meteo) * facteur_enjeu(enjeu)
+lh_brut *= fcomm
+la_brut *= fcomm
 
-    lh_brut = max(lh_brut, 0.1)
-    la_brut = max(la_brut, 0.1)
+lh_brut *= facteur_blessures(blessures_dom)
+la_brut *= facteur_blessures(blessures_ext)
+lh_brut *= facteur_fatigue(fatigue_dom)
+la_brut *= facteur_fatigue(fatigue_ext)
 
-    signature = analyser_signature_foot(lh_brut, la_brut, ligue=ligue, n_mc=10000, rho=-0.05)
+lh_brut = max(lh_brut, 0.1)
+la_brut = max(la_brut, 0.1)
 
-    ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
-    forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
-    
-    regime = {"disponible": False, "regime": "INCONNU"}
+signature = analyser_signature_foot(lh_brut, la_brut, ligue=ligue, n_mc=10000, rho=-0.05)
 
-    forensics_sharpe = 0.0
-    if forensics and forensics.get("disponible"):
-        forensics_sharpe = forensics["sharpe_signal"]["sharpe_signal"]
+ecart_forces_norm = min(abs(signature["lambda_home_bayesien"] - signature["lambda_away_bayesien"]) / 3.0, 1.0)
+forensics = analyser_market_forensics(open_1, open_x, open_2, curr_1, curr_x, curr_2)
+regime = analyser_regime(forensics)
 
-    contexte_stack = {
-        "volatilite": 0.4,
-        "ecart_forces": ecart_forces_norm,
-        "ligue": ligue or "autre",
-        "forensics_sharpe": forensics_sharpe,
-    }
+forensics_sharpe = 0.0
+if forensics and forensics.get("disponible"):
+    forensics_sharpe = forensics["sharpe_signal"]["sharpe_signal"]
 
-    stacking = analyser_meta_ensemble(
-        signature["probas_poisson"],
-        signature["probas_dc"],
-        signature["probas_mc"],
-        signature["probas_bayes"],
-        contexte_stack,
-    )
+contexte_stack = {
+    "volatilite": 0.4,
+    "ecart_forces": ecart_forces_norm,
+    "ligue": ligue or "autre",
+    "forensics_sharpe": forensics_sharpe,
+}
 
-    lh = signature["lambda_home_bayesien"]
-    la = signature["lambda_away_bayesien"]
-    matrix = signature["matrix_dc"]
+stacking = analyser_meta_ensemble(
+    signature["probas_poisson"],
+    signature["probas_dc"],
+    signature["probas_mc"],
+    signature["probas_bayes"],
+    contexte_stack,
+)
 
-    p1 = stacking["p1_final"]
-    px = stacking["px_final"]
-    p2 = stacking["p2_final"]
+lh = signature["lambda_home_bayesien"]
+la = signature["lambda_away_bayesien"]
+matrix = signature["matrix_dc"]
 
-    ev1 = compute_ev(p1, curr_1)
-    evx = compute_ev(px, curr_x) if curr_x > 0 else -1.0
-    ev2 = compute_ev(p2, curr_2)
+p1 = stacking["p1_final"]
+px = stacking["px_final"]
+p2 = stacking["p2_final"]
 
-    f1 = compute_reliability(p1, curr_1, ev1)
-    if curr_x > 0:
-        fx = compute_reliability(px, curr_x, evx)
+ev1 = compute_ev(p1, curr_1)
+evx = compute_ev(px, curr_x) if curr_x > 0 else -1.0
+ev2 = compute_ev(p2, curr_2)
+
+f1 = compute_reliability(p1, curr_1, ev1)
+if curr_x > 0:
+    fx = compute_reliability(px, curr_x, evx)
+else:
+    fx = 0.0
+f2 = compute_reliability(p2, curr_2, ev2)
+
+candidats = [
+    {"selection": "1 (Domicile)", "p": p1, "cote": curr_1, "ev": ev1, "fiabilite": f1, "type": "1X2"},
+    {"selection": "X (Nul)", "p": px, "cote": curr_x, "ev": evx, "fiabilite": fx, "type": "1X2"},
+    {"selection": "2 (Exterieur)", "p": p2, "cote": curr_2, "ev": ev2, "fiabilite": f2, "type": "1X2"},
+]
+
+for c in candidats:
+    passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = passe
+    c["raisons_rejet"] = raisons
+    dec, niv = classify_decision(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
+    c = appliquer_forensics_au_candidat(c, forensics)
+    c = appliquer_stacking_au_candidat(c, stacking)
+
+handicap_resultats = calcul_handicap_complet(matrix, handicap_lignes)
+ou_resultats = calcul_ou_complet_from_signature(signature, ou_lignes)
+
+for h in handicap_resultats:
+    h = appliquer_forensics_au_candidat(h, forensics)
+    h = appliquer_stacking_au_candidat(h, stacking)
+for o in ou_resultats:
+    o = appliquer_forensics_au_candidat(o, forensics)
+    o = appliquer_stacking_au_candidat(o, stacking)
+
+cross_market = analyser_cross_market(
+    candidats, handicap_resultats, ou_resultats, [],
+    mu_total_ref=(lh + la)
+)
+
+for c in candidats:
+    fiab_avant = c["fiabilite"]
+    fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
+    c["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
+    c["fiabilite"] = fiab_apres
+    dec, niv = classify_decision(c["fiabilite"], c["ev"])
+    c["decision"] = dec
+    c["niveau"] = niv
+    p_f, r_f = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
+    c["passe_filtres"] = p_f
+    c["raisons_rejet"] = r_f
+    c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if p_f else 0.0
+
+for h in handicap_resultats:
+    fiab_avant = h["fiabilite"]
+    fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
+    h["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
+    h["fiabilite"] = fiab_apres
+    dec, niv = classify_decision(h["fiabilite"], h["ev"])
+    h["decision"] = dec
+    h["niveau"] = niv
+    p_f, r_f = appliquer_filtres_discipline(h["p"], h["cote"], h["ev"], h["fiabilite"])
+    h["passe_filtres"] = p_f
+    h["raisons_rejet"] = r_f
+    h["stake"] = compute_stake(h["p"], h["cote"], h["fiabilite"], h["ev"]) if p_f else 0.0
+
+for o in ou_resultats:
+    fiab_avant = o["fiabilite"]
+    fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
+    o["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
+    o["fiabilite"] = fiab_apres
+    dec, niv = classify_decision(o["fiabilite"], o["ev"])
+    o["decision"] = dec
+    o["niveau"] = niv
+    p_f, r_f = appliquer_filtres_discipline(o["p"], o["cote"], o["ev"], o["fiabilite"])
+    o["passe_filtres"] = p_f
+    o["raisons_rejet"] = r_f
+    o["stake"] = compute_stake(o["p"], o["cote"], o["fiabilite"], o["ev"]) if p_f else 0.0
+
+ratio_ht_h = compute_ratio_ht(home_ctx)
+ratio_ht_a = compute_ratio_ht(away_ctx)
+lambda_ht_h = lh * ratio_ht_h
+lambda_ht_a = la * ratio_ht_a
+lambda_2h_h = lh * (1 - ratio_ht_h)
+lambda_2h_a = la * (1 - ratio_ht_a)
+
+marches_2mt = calcul_marches_2mt(lambda_ht_h, lambda_ht_a, lambda_2h_h, lambda_2h_a, cotes_ht, cotes_2h)
+
+for c in marches_2mt.get("ht", []):
+    c = appliquer_forensics_au_candidat(c, forensics)
+    c = appliquer_stacking_au_candidat(c, stacking)
+for c in marches_2mt.get("2h", []):
+    c = appliquer_forensics_au_candidat(c, forensics)
+    c = appliquer_stacking_au_candidat(c, stacking)
+
+
+tous = []
+for c in candidats:
+    tous.append(c)
+for h in handicap_resultats:
+    h["selection"] = "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")"
+    h["type"] = "Handicap"
+    tous.append(h)
+for o in ou_resultats:
+    o["selection"] = o.get("type_ou", "O/U") + " " + str(o.get("ligne", ""))
+    o["type"] = "O/U"
+    tous.append(o)
+for c in marches_2mt.get("ht", []):
+    c["type"] = "1X2 HT"
+    tous.append(c)
+for c in marches_2mt.get("2h", []):
+    c["type"] = "1X2 2H"
+    tous.append(c)
+
+tous.sort(key=lambda x: x["fiabilite"], reverse=True)
+
+pari_retenu = None
+for c in tous:
+    if c["passe_filtres"] and c["stake"] > 0:
+        pari_retenu = c
+        break
+
+ou_securite = None
+if ou_resultats:
+    passes = [o for o in ou_resultats if o["passe_filtres"]]
+    if passes:
+        ou_securite = max(passes, key=lambda x: x["fiabilite"])
     else:
-        fx = 0.0
-    f2 = compute_reliability(p2, curr_2, ev2)
-
-    candidats = []
-    c1 = {"selection": "1 (Domicile)", "p": p1, "cote": curr_1, "ev": ev1, "fiabilite": f1, "type": "1X2"}
-    c2 = {"selection": "X (Nul)", "p": px, "cote": curr_x, "ev": evx, "fiabilite": fx, "type": "1X2"}
-    c3 = {"selection": "2 (Exterieur)", "p": p2, "cote": curr_2, "ev": ev2, "fiabilite": f2, "type": "1X2"}
-    candidats.append(c1)
-    candidats.append(c2)
-    candidats.append(c3)
-
-    for c in candidats:
-        passe, raisons = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
-        c["passe_filtres"] = passe
-        c["raisons_rejet"] = raisons
-        dec, niv = classify_decision(c["fiabilite"], c["ev"])
-        c["decision"] = dec
-        c["niveau"] = niv
-        c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if passe else 0.0
-        c = appliquer_forensics_au_candidat(c, forensics)
-        c = appliquer_stacking_au_candidat(c, stacking)
-
-    handicap_resultats = calcul_handicap_complet(matrix, handicap_lignes)
-    ou_resultats = calcul_ou_complet_from_signature(signature, ou_lignes)
-
-    for h in handicap_resultats:
-        h = appliquer_forensics_au_candidat(h, forensics)
-        h = appliquer_stacking_au_candidat(h, stacking)
-    for o in ou_resultats:
-        o = appliquer_forensics_au_candidat(o, forensics)
-        o = appliquer_stacking_au_candidat(o, stacking)
-
-    cross_market = analyser_cross_market(
-        candidats, handicap_resultats, ou_resultats, [],
-        mu_total_ref=(lh + la)
-    )
-
-    for c in candidats:
-        fiab_avant = c["fiabilite"]
-        fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
-        c["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
-        c["fiabilite"] = fiab_apres
-        dec, niv = classify_decision(c["fiabilite"], c["ev"])
-        c["decision"] = dec
-        c["niveau"] = niv
-        p_f, r_f = appliquer_filtres_discipline(c["p"], c["cote"], c["ev"], c["fiabilite"])
-        c["passe_filtres"] = p_f
-        c["raisons_rejet"] = r_f
-        c["stake"] = compute_stake(c["p"], c["cote"], c["fiabilite"], c["ev"]) if p_f else 0.0
-
-    for h in handicap_resultats:
-        fiab_avant = h["fiabilite"]
-        fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
-        h["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
-        h["fiabilite"] = fiab_apres
-        dec, niv = classify_decision(h["fiabilite"], h["ev"])
-        h["decision"] = dec
-        h["niveau"] = niv
-        p_f, r_f = appliquer_filtres_discipline(h["p"], h["cote"], h["ev"], h["fiabilite"])
-        h["passe_filtres"] = p_f
-        h["raisons_rejet"] = r_f
-        h["stake"] = compute_stake(h["p"], h["cote"], h["fiabilite"], h["ev"]) if p_f else 0.0
-
-    for o in ou_resultats:
-        fiab_avant = o["fiabilite"]
-        fiab_apres = ajuster_fiabilite_consistency(fiab_avant, cross_market["consistency"])
-        o["ajustement_consistency"] = round(fiab_apres - fiab_avant, 3)
-        o["fiabilite"] = fiab_apres
-        dec, niv = classify_decision(o["fiabilite"], o["ev"])
-        o["decision"] = dec
-        o["niveau"] = niv
-        p_f, r_f = appliquer_filtres_discipline(o["p"], o["cote"], o["ev"], o["fiabilite"])
-        o["passe_filtres"] = p_f
-        o["raisons_rejet"] = r_f
-        o["stake"] = compute_stake(o["p"], o["cote"], o["fiabilite"], o["ev"]) if p_f else 0.0
-
-    ratio_ht_h = compute_ratio_ht(home_ctx)
-    ratio_ht_a = compute_ratio_ht(away_ctx)
-    lambda_ht_h = lh * ratio_ht_h
-    lambda_ht_a = la * ratio_ht_a
-    lambda_2h_h = lh * (1 - ratio_ht_h)
-    lambda_2h_a = la * (1 - ratio_ht_a)
-
-    marches_2mt = calcul_marches_2mt(lambda_ht_h, lambda_ht_a, lambda_2h_h, lambda_2h_a, cotes_ht, cotes_2h)
-
-    for c in marches_2mt.get("ht", []):
-        c = appliquer_forensics_au_candidat(c, forensics)
-        c = appliquer_stacking_au_candidat(c, stacking)
-    for c in marches_2mt.get("2h", []):
-        c = appliquer_forensics_au_candidat(c, forensics)
-        c = appliquer_stacking_au_candidat(c, stacking)
-
-    tous = []
-    for c in candidats:
-        tous.append(c)
-    for h in handicap_resultats:
-        h["selection"] = "Hcp " + str(h["hcp"]) + " (" + h["cible"] + ")"
-        h["type"] = "Handicap"
-        tous.append(h)
-    for o in ou_resultats:
-        o["selection"] = o.get("type_ou", "O/U") + " " + str(o.get("ligne", ""))
-        o["type"] = "O/U"
-        tous.append(o)
-    for c in marches_2mt.get("ht", []):
-        c["type"] = "1X2 HT"
-        tous.append(c)
-    for c in marches_2mt.get("2h", []):
-        c["type"] = "1X2 2H"
-        tous.append(c)
-
-    tous.sort(key=lambda x: x["fiabilite"], reverse=True)
-
-    pari_retenu = None
-    for c in tous:
-        if c["passe_filtres"] and c["stake"] > 0:
-            pari_retenu = c
-            break
-
-    ou_securite = None
-    if ou_resultats:
-        passes = [o for o in ou_resultats if o["passe_filtres"]]
-        if passes:
-            ou_securite = max(passes, key=lambda x: x["fiabilite"])
-        else:
-            ou_securite = max(ou_resultats, key=lambda x: x["fiabilite"])
-        if pari_retenu and ou_securite:
-            meme_marche = pari_retenu.get("marche") == ou_securite.get("marche")
-            meme_selection = pari_retenu.get("selection") == ou_securite.get("selection")
-            if meme_marche and meme_selection:
-                ou_securite = None
-        if ou_securite and ou_securite["fiabilite"] < 0.60:
+        ou_securite = max(ou_resultats, key=lambda x: x["fiabilite"])
+    if pari_retenu and ou_securite:
+        meme_marche = pari_retenu.get("marche") == ou_securite.get("marche")
+        meme_selection = pari_retenu.get("selection") == ou_securite.get("selection")
+        if meme_marche and meme_selection:
             ou_securite = None
+    if ou_securite and ou_securite["fiabilite"] < 0.60:
+        ou_securite = None
 
-    top_scores = sorted(matrix.items(), key=lambda x: x[1], reverse=True)[:3]
-    top_3 = []
-    for idx, (sc, pr) in enumerate(top_scores):
-        top_3.append({
-            "rank": idx + 1,
-            "score": str(sc[0]) + "-" + str(sc[1]),
-            "probability": round(pr, 4),
-        })
+top_scores = sorted(matrix.items(), key=lambda x: x[1], reverse=True)[:3]
+top_3 = []
+for idx, (sc, pr) in enumerate(top_scores):
+    top_3.append({
+        "rank": idx + 1,
+        "score": str(sc[0]) + "-" + str(sc[1]),
+        "probability": round(pr, 4),
+    })
 
-    cotes_dict = {"curr_1": curr_1, "curr_x": curr_x, "curr_2": curr_2}
-    r_temp = {
-        "p1": p1,
-        "px": px,
-        "p2": p2,
-        "handicap_resultats": handicap_resultats,
-        "ou_resultats": ou_resultats,
-    }
-    divergences = detecter_divergences(r_temp, cotes_dict)
+cotes_dict = {"curr_1": curr_1, "curr_x": curr_x, "curr_2": curr_2}
+r_temp = {
+    "p1": p1,
+    "px": px,
+    "p2": p2,
+    "handicap_resultats": handicap_resultats,
+    "ou_resultats": ou_resultats,
+}
+divergences = detecter_divergences(r_temp, cotes_dict)
 
-    details = {
-        "home_bp_ctx": round(hbp_ctx, 2),
-        "home_bp_glob": round(hbp_g, 2),
-        "away_bp_ctx": round(abp_ctx, 2),
-        "away_bp_glob": round(abp_g, 2),
-        "ratio_ht_home": round(ratio_ht_h, 3),
-        "ratio_ht_away": round(ratio_ht_a, 3),
-        "f_ht_home": round(fht_h, 3),
-        "f_ht_away": round(fht_a, 3),
-        "f_forme_home": round(ff_h, 3),
-        "f_forme_away": round(ff_a, 3),
-        "f_class_home": fc_h,
-        "f_class_away": fc_a,
-        "f_h2h_home": fh2h_h,
-        "f_h2h_away": fh2h_a,
-        "f_meteo": round(facteur_meteo(meteo), 3),
-        "f_enjeu": round(facteur_enjeu(enjeu), 3),
-        "f_bless_dom": facteur_blessures(blessures_dom),
-        "f_bless_ext": facteur_blessures(blessures_ext),
-        "f_fatigue_dom": facteur_fatigue(fatigue_dom),
-        "f_fatigue_ext": facteur_fatigue(fatigue_ext),
-        "f_commun": round(fcomm, 3),
-    }
+details = {
+    "home_bp_ctx": round(hbp_ctx, 2),
+    "home_bp_glob": round(hbp_g, 2),
+    "away_bp_ctx": round(abp_ctx, 2),
+    "away_bp_glob": round(abp_g, 2),
+    "ratio_ht_home": round(ratio_ht_h, 3),
+    "ratio_ht_away": round(ratio_ht_a, 3),
+    "f_ht_home": round(fht_h, 3),
+    "f_ht_away": round(fht_a, 3),
+    "f_forme_home": round(ff_h, 3),
+    "f_forme_away": round(ff_a, 3),
+    "f_class_home": fc_h,
+    "f_class_away": fc_a,
+    "f_h2h_home": fh2h_h,
+    "f_h2h_away": fh2h_a,
+    "f_meteo": round(facteur_meteo(meteo), 3),
+    "f_enjeu": round(facteur_enjeu(enjeu), 3),
+    "f_bless_dom": facteur_blessures(blessures_dom),
+    "f_bless_ext": facteur_blessures(blessures_ext),
+    "f_fatigue_dom": facteur_fatigue(fatigue_dom),
+    "f_fatigue_ext": facteur_fatigue(fatigue_ext),
+    "f_commun": round(fcomm, 3),
+}
 
-    signature_dict = {
-        "prior_ligue": signature["prior_ligue"],
-        "lambda_home_brut": signature["lambda_home_brut"],
-        "lambda_away_brut": signature["lambda_away_brut"],
-        "lambda_home_bayesien": signature["lambda_home_bayesien"],
-        "lambda_away_bayesien": signature["lambda_away_bayesien"],
-        "rho": signature["rho"],
-        "methode": signature["methode"],
-        "n_simulations": signature["n_simulations"],
-        "ic_p1": signature["ic_p1"],
-        "ic_px": signature["ic_px"],
-        "ic_p2": signature["ic_p2"],
-        "stab_p1": signature["stab_p1"],
-        "stab_px": signature["stab_px"],
-        "stab_p2": signature["stab_p2"],
-        "p_btts_oui_dc": signature["p_btts_oui_dc"],
-        "p_btts_non_dc": signature["p_btts_non_dc"],
-    }
+signature_dict = {
+    "prior_ligue": signature["prior_ligue"],
+    "lambda_home_brut": signature["lambda_home_brut"],
+    "lambda_away_brut": signature["lambda_away_brut"],
+    "lambda_home_bayesien": signature["lambda_home_bayesien"],
+    "lambda_away_bayesien": signature["lambda_away_bayesien"],
+    "rho": signature["rho"],
+    "methode": signature["methode"],
+    "n_simulations": signature["n_simulations"],
+    "ic_p1": signature["ic_p1"],
+    "ic_px": signature["ic_px"],
+    "ic_p2": signature["ic_p2"],
+    "stab_p1": signature["stab_p1"],
+    "stab_px": signature["stab_px"],
+    "stab_p2": signature["stab_p2"],
+    "p_btts_oui_dc": signature["p_btts_oui_dc"],
+    "p_btts_non_dc": signature["p_btts_non_dc"],
+}
 
-    resultat = {}
-    resultat["lambda_home"] = round(lh, 2)
-    resultat["lambda_away"] = round(la, 2)
-    resultat["lambda_home_brut"] = round(lh_brut, 2)
-    resultat["lambda_away_brut"] = round(la_brut, 2)
-    resultat["lambda_ht_home"] = round(lambda_ht_h, 2)
-    resultat["lambda_ht_away"] = round(lambda_ht_a, 2)
-    resultat["lambda_2h_home"] = round(lambda_2h_h, 2)
-    resultat["lambda_2h_away"] = round(lambda_2h_a, 2)
-    resultat["details"] = details
-    resultat["signature"] = signature_dict
-    resultat["forensics"] = forensics
-    resultat["regime"] = regime
-    resultat["stacking"] = stacking
-    resultat["cross_market"] = cross_market
-    resultat["p1"] = round(p1, 4)
-    resultat["px"] = round(px, 4)
-    resultat["p2"] = round(p2, 4)
-    resultat["ev1"] = round(ev1, 4)
-    resultat["evx"] = round(evx, 4)
-    resultat["ev2"] = round(ev2, 4)
-    resultat["f1"] = f1
-    resultat["fx"] = fx
-    resultat["f2"] = f2
-    resultat["candidats"] = candidats
-    resultat["handicap_resultats"] = handicap_resultats
-    resultat["ou_resultats"] = ou_resultats
-    resultat["marches_2mt"] = marches_2mt
-    resultat["ou_securite"] = ou_securite
-    resultat["pari_retenu"] = pari_retenu
-    resultat["top_3_scores"] = top_3
-    resultat["divergences"] = divergences
+resultat = {}
+resultat["lambda_home"] = round(lh, 2)
+resultat["lambda_away"] = round(la, 2)
+resultat["lambda_home_brut"] = round(lh_brut, 2)
+resultat["lambda_away_brut"] = round(la_brut, 2)
+resultat["lambda_ht_home"] = round(lambda_ht_h, 2)
+resultat["lambda_ht_away"] = round(lambda_ht_a, 2)
+resultat["lambda_2h_home"] = round(lambda_2h_h, 2)
+resultat["lambda_2h_away"] = round(lambda_2h_a, 2)
+resultat["details"] = details
+resultat["signature"] = signature_dict
+resultat["forensics"] = forensics
+resultat["regime"] = regime
+resultat["time_decay"] = {
+    "home_bp_ctx_pond": moy_ctx_h["bp"],
+    "home_bp_glob_pond": moy_glob_h["bp"],
+    "away_bp_ctx_pond": moy_ctx_a["bp"],
+    "away_bp_glob_pond": moy_glob_a["bp"],
+}
+resultat["stacking"] = stacking
+resultat["cross_market"] = cross_market
+resultat["p1"] = round(p1, 4)
+resultat["px"] = round(px, 4)
+resultat["p2"] = round(p2, 4)
+resultat["ev1"] = round(ev1, 4)
+resultat["evx"] = round(evx, 4)
+resultat["ev2"] = round(ev2, 4)
+resultat["f1"] = f1
+resultat["fx"] = fx
+resultat["f2"] = f2
+resultat["candidats"] = candidats
+resultat["handicap_resultats"] = handicap_resultats
+resultat["ou_resultats"] = ou_resultats
+resultat["marches_2mt"] = marches_2mt
+resultat["ou_securite"] = ou_securite
+resultat["pari_retenu"] = pari_retenu
+resultat["top_3_scores"] = top_3
+resultat["divergences"] = divergences
 
-    return resultat
+return resultat
