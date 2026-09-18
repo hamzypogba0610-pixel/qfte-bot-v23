@@ -1,52 +1,186 @@
 """
 qfte_engine/mvp.py
-------------------
-Moteur QFTE V23.0 - Football
-Interface compatible avec main.py V23.0
+==================
+
+QFTE V23.0 — Moteur Football
+
+Interface compatible avec main.py V23.0.
+
+Objectifs :
+- conserver les briques QFTE existantes ;
+- accepter l'appel football V23.0 à 25 paramètres ;
+- produire les anciennes clés attendues par main.py ;
+- exposer également les structures modernes V23 ;
+- sécuriser les interfaces avec les modules spécialisés.
 """
 
 import math
 
-from qfte_engine.signature_foot import (
-    analyser_signature_foot,
-    calculer_over_under_avec_ic,
-)
 
-from qfte_engine.forensics import (
-    analyser_market_forensics,
-    ajuster_fiabilite,
-)
+# ============================================================
+# IMPORTS MODULES QFTE
+# ============================================================
 
-from qfte_engine.stacking import (
-    analyser_meta_ensemble,
-    ajuster_fiabilite_pcs,
-)
+try:
+    from qfte_engine.signature_foot import (
+        analyser_signature_foot,
+        calculer_over_under_avec_ic,
+    )
+except Exception:
+    analyser_signature_foot = None
+    calculer_over_under_avec_ic = None
 
-from qfte_engine.cross_market import (
-    analyser_cross_market,
-    ajuster_fiabilite_consistency,
-)
 
-from qfte_engine.regime import analyser_regime
+try:
+    from qfte_engine.forensics import (
+        analyser_market_forensics,
+        ajuster_fiabilite,
+    )
+except Exception:
+    analyser_market_forensics = None
+    ajuster_fiabilite = None
 
-from qfte_engine.time_decay import (
-    extraire_moyennes_ponderees,
-    fusion_ponderee,
-)
+
+try:
+    from qfte_engine.stacking import (
+        analyser_meta_ensemble,
+        ajuster_fiabilite_pcs,
+    )
+except Exception:
+    analyser_meta_ensemble = None
+    ajuster_fiabilite_pcs = None
+
+
+try:
+    from qfte_engine.cross_market import (
+        analyser_cross_market,
+        ajuster_fiabilite_consistency,
+    )
+except Exception:
+    analyser_cross_market = None
+    ajuster_fiabilite_consistency = None
+
+
+try:
+    from qfte_engine.regime import analyser_regime
+except Exception:
+    analyser_regime = None
+
+
+try:
+    from qfte_engine.time_decay import (
+        extraire_moyennes_ponderees,
+        fusion_ponderee,
+    )
+except Exception:
+    extraire_moyennes_ponderees = None
+    fusion_ponderee = None
 
 
 # ============================================================
-# OUTILS MATHEMATIQUES
+# CONSTANTES
+# ============================================================
+
+SEUIL_FIABILITE = 0.75
+SEUIL_VALUE_1X2 = 0.05
+SEUIL_CONFIANCE = 0.70
+
+EPS = 1e-9
+
+
+# ============================================================
+# OUTILS NUMÉRIQUES
+# ============================================================
+
+def _safe_float(value, default=0.0):
+    """
+    Conversion robuste en float.
+    """
+    try:
+        if value is None:
+            return default
+
+        if isinstance(value, bool):
+            return float(value)
+
+        result = float(value)
+
+        if not math.isfinite(result):
+            return default
+
+        return result
+
+    except Exception:
+        return default
+
+
+def _clamp(value, minimum=0.0, maximum=1.0):
+    """
+    Limite une valeur à un intervalle.
+    """
+    return max(
+        minimum,
+        min(maximum, _safe_float(value)),
+    )
+
+
+def _safe_list(value):
+    """
+    Garantit une liste.
+    """
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return value
+
+    if isinstance(value, tuple):
+        return list(value)
+
+    return [value]
+
+
+def moy(values, default=0.0):
+    """
+    Moyenne robuste.
+    """
+    vals = []
+
+    for value in _safe_list(values):
+        try:
+            v = float(value)
+
+            if math.isfinite(v):
+                vals.append(v)
+
+        except Exception:
+            continue
+
+    if not vals:
+        return default
+
+    return sum(vals) / len(vals)
+
+
+# ============================================================
+# POISSON
 # ============================================================
 
 def poisson_pmf(k, lam):
-    lam = max(float(lam), 0.0)
-    if k < 0:
-        return 0.0
+    """
+    Probabilité de Poisson P(X=k).
+    """
+    k = int(max(0, k))
+    lam = max(0.0, _safe_float(lam))
+
+    if lam == 0:
+        return 1.0 if k == 0 else 0.0
 
     try:
-        return math.exp(-lam) * (lam ** k) / math.factorial(k)
-    except (OverflowError, ValueError):
+        return math.exp(
+            -lam + k * math.log(lam) - math.lgamma(k + 1)
+        )
+    except Exception:
         return 0.0
 
 
@@ -55,120 +189,191 @@ def compute_score_matrix(
     lambda_away,
     max_goals=8,
 ):
+    """
+    Matrice des scores exacts selon deux lois de Poisson.
+    """
+
+    lambda_home = max(
+        0.0,
+        _safe_float(lambda_home),
+    )
+
+    lambda_away = max(
+        0.0,
+        _safe_float(lambda_away),
+    )
+
+    max_goals = max(
+        3,
+        int(max_goals),
+    )
+
+    home_probs = [
+        poisson_pmf(i, lambda_home)
+        for i in range(max_goals + 1)
+    ]
+
+    away_probs = [
+        poisson_pmf(j, lambda_away)
+        for j in range(max_goals + 1)
+    ]
+
     matrix = []
 
     for i in range(max_goals + 1):
-        ligne = []
+        row = []
 
         for j in range(max_goals + 1):
-            p = (
-                poisson_pmf(i, lambda_home)
-                * poisson_pmf(j, lambda_away)
+            row.append(
+                home_probs[i] * away_probs[j]
             )
-            ligne.append(p)
 
-        matrix.append(ligne)
+        matrix.append(row)
 
     total = sum(
-        sum(ligne)
-        for ligne in matrix
+        sum(row)
+        for row in matrix
     )
 
-    if total > 0:
+    if total > EPS:
         matrix = [
             [
-                p / total
-                for p in ligne
+                value / total
+                for value in row
             ]
-            for ligne in matrix
+            for row in matrix
         ]
 
     return matrix
 
 
 def compute_1x2(matrix):
+    """
+    Conversion d'une matrice de scores en probabilités 1X2.
+    """
+
     p1 = 0.0
     px = 0.0
     p2 = 0.0
 
-    for i, ligne in enumerate(matrix):
-        for j, p in enumerate(ligne):
+    if not matrix:
+        return 0.0, 0.0, 0.0
+
+    for i, row in enumerate(matrix):
+        for j, probability in enumerate(row):
+
+            probability = _safe_float(probability)
+
             if i > j:
-                p1 += p
+                p1 += probability
+
             elif i == j:
-                px += p
+                px += probability
+
             else:
-                p2 += p
+                p2 += probability
+
+    total = p1 + px + p2
+
+    if total > EPS:
+        p1 /= total
+        px /= total
+        p2 /= total
 
     return p1, px, p2
 
 
-def compute_ratio_ht(matchs):
-    if not matchs:
-        return 0.45
+# ============================================================
+# RATIO HT
+# ============================================================
 
-    vals = []
+def compute_ratio_ht(x):
+    """
+    Ratio structurel de production en première période.
 
-    for m in matchs:
-        bp = m.get("bp")
-        bc = m.get("bc")
-        ht_bp = m.get("ht_bp")
-        ht_bc = m.get("ht_bc")
+    IMPORTANT :
+    cette fonction accepte UN SEUL argument.
 
-        if (
-            ht_bp is None
-            or ht_bc is None
-            or bp is None
-            or bc is None
-        ):
-            continue
+    Cela correspond à la signature actuellement présente
+    dans le moteur reconstruit.
 
-        total = bp + bc
+    x peut être :
+    - lambda total ;
+    - valeur numérique assimilée au potentiel de buts.
+    """
 
-        if total <= 0:
-            continue
+    x = max(
+        0.0,
+        _safe_float(x),
+    )
 
-        ht_total = ht_bp + ht_bc
+    # Ratio de base légèrement dépendant du niveau
+    # de production totale.
+    if x <= 1.0:
+        ratio = 0.45
 
-        vals.append(
-            max(
-                0.20,
-                min(
-                    0.80,
-                    ht_total / total,
-                ),
-            )
-        )
+    elif x <= 2.0:
+        ratio = 0.46
 
-    if not vals:
-        return 0.45
+    elif x <= 3.0:
+        ratio = 0.47
 
-    return sum(vals) / len(vals)
+    elif x <= 4.0:
+        ratio = 0.48
+
+    else:
+        ratio = 0.49
+
+    return _clamp(
+        ratio,
+        0.35,
+        0.60,
+    )
 
 
-def demargeage_proportionnel(cotes):
-    if not cotes:
-        return {}
+# ============================================================
+# DEMARGEAGE
+# ============================================================
 
-    inv = {}
+def demargeage_proportionnel(
+    cote_1,
+    cote_x,
+    cote_2,
+):
+    """
+    Convertit des cotes 1X2 en probabilités sans marge
+    par normalisation proportionnelle.
+    """
 
-    for k, cote in cotes.items():
-        try:
-            cote = float(cote)
+    odds = [
+        _safe_float(cote_1),
+        _safe_float(cote_x),
+        _safe_float(cote_2),
+    ]
 
-            if cote > 1:
-                inv[k] = 1.0 / cote
-        except (TypeError, ValueError):
-            continue
+    implied = []
 
-    total = sum(inv.values())
+    for odd in odds:
+        if odd > 1.0:
+            implied.append(1.0 / odd)
+        else:
+            implied.append(0.0)
 
-    if total <= 0:
-        return {}
+    total = sum(implied)
+
+    if total <= EPS:
+        return {
+            "1": 0.0,
+            "X": 0.0,
+            "2": 0.0,
+            "marge": 0.0,
+        }
 
     return {
-        k: v / total
-        for k, v in inv.items()
+        "1": implied[0] / total,
+        "X": implied[1] / total,
+        "2": implied[2] / total,
+        "marge": max(0.0, total - 1.0),
     }
 
 
@@ -176,728 +381,894 @@ def demargeage_proportionnel(cotes):
 # HANDICAP
 # ============================================================
 
-def proba_handicap_dom(matrix, hcp):
-    gain = 0.0
-    remboursement = 0.0
+def proba_handicap_dom(
+    matrix,
+    handicap=0.0,
+):
+    """
+    Probabilité du côté domicile sur handicap asiatique
+    simplifié.
+    """
 
-    for i, ligne in enumerate(matrix):
-        for j, p in enumerate(ligne):
-            diff = i - j + hcp
+    handicap = _safe_float(handicap)
 
-            if diff > 0:
-                gain += p
+    win = 0.0
+    push = 0.0
 
-            elif abs(diff) < 1e-9:
-                remboursement += p
+    for i, row in enumerate(matrix):
 
-    return gain, remboursement
+        for j, probability in enumerate(row):
 
+            diff = i - j + handicap
+            probability = _safe_float(probability)
 
-def proba_handicap_ext(matrix, hcp):
-    gain = 0.0
-    remboursement = 0.0
+            if diff > EPS:
+                win += probability
 
-    for i, ligne in enumerate(matrix):
-        for j, p in enumerate(ligne):
-            diff = j - i - hcp
+            elif abs(diff) <= EPS:
+                push += probability
 
-            if diff > 0:
-                gain += p
-
-            elif abs(diff) < 1e-9:
-                remboursement += p
-
-    return gain, remboursement
-
-
-# ============================================================
-# UTILITAIRES QFTE
-# ============================================================
-
-def moy(vals):
-    vals = [
-        float(v)
-        for v in vals
-        if v is not None
-    ]
-
-    if not vals:
-        return 0.0
-
-    return sum(vals) / len(vals)
-
-
-def facteur_meteo(m):
-    if not m:
-        return 1.0
-
-    m = str(m).lower()
-
-    facteurs = {
-        "normale": 1.0,
-        "normal": 1.0,
-        "bonne": 1.0,
-        "pluie": 0.96,
-        "forte_pluie": 0.92,
-        "vent": 0.94,
-        "fort_vent": 0.90,
-        "neige": 0.90,
-        "chaleur": 0.96,
-    }
-
-    return facteurs.get(m, 1.0)
-
-
-def facteur_enjeu(e):
-    if not e:
-        return 1.0
-
-    e = str(e).lower()
-
-    facteurs = {
-        "normal": 1.0,
-        "faible": 0.96,
-        "important": 1.02,
-        "tres_important": 1.03,
-        "decisif": 1.04,
-    }
-
-    return facteurs.get(e, 1.0)
-
-
-def facteur_blessures(a):
-    if not a:
-        return 1.0
-
-    if isinstance(a, bool):
-        return 0.94 if a else 1.0
-
-    try:
-        x = float(a)
-    except (TypeError, ValueError):
-        return 1.0
-
-    return max(
-        0.80,
-        min(
-            1.05,
-            1.0 - x,
+    return {
+        "win": win,
+        "push": push,
+        "lose": max(
+            0.0,
+            1.0 - win - push,
         ),
+    }
+
+
+def proba_handicap_ext(
+    matrix,
+    handicap=0.0,
+):
+    """
+    Probabilité du côté extérieur sur handicap simplifié.
+    """
+
+    handicap = _safe_float(handicap)
+
+    win = 0.0
+    push = 0.0
+
+    for i, row in enumerate(matrix):
+
+        for j, probability in enumerate(row):
+
+            diff = j - i + handicap
+            probability = _safe_float(probability)
+
+            if diff > EPS:
+                win += probability
+
+            elif abs(diff) <= EPS:
+                push += probability
+
+    return {
+        "win": win,
+        "push": push,
+        "lose": max(
+            0.0,
+            1.0 - win - push,
+        ),
+    }
+
+
+# ============================================================
+# FACTEURS CONTEXTUELS
+# ============================================================
+
+def facteur_meteo(meteo):
+    """
+    Facteur météo.
+    """
+
+    if isinstance(meteo, (int, float)):
+        return _clamp(
+            float(meteo),
+            0.85,
+            1.10,
+        )
+
+    texte = str(
+        meteo or "normale"
+    ).lower()
+
+    if any(
+        mot in texte
+        for mot in (
+            "orage",
+            "tempête",
+            "forte pluie",
+            "neige",
+        )
+    ):
+        return 0.90
+
+    if any(
+        mot in texte
+        for mot in (
+            "pluie",
+            "vent",
+            "mauvaise",
+        )
+    ):
+        return 0.96
+
+    if any(
+        mot in texte
+        for mot in (
+            "bonne",
+            "favorable",
+            "normale",
+            "normal",
+        )
+    ):
+        return 1.00
+
+    return 1.00
+
+
+def facteur_enjeu(enjeu):
+    """
+    Ajustement léger lié à l'enjeu.
+    """
+
+    if isinstance(enjeu, (int, float)):
+        return _clamp(
+            float(enjeu),
+            0.90,
+            1.10,
+        )
+
+    texte = str(
+        enjeu or "normal"
+    ).lower()
+
+    if any(
+        mot in texte
+        for mot in (
+            "décisif",
+            "finale",
+            "qualification",
+            "maintien",
+        )
+    ):
+        return 0.98
+
+    if any(
+        mot in texte
+        for mot in (
+            "faible",
+            "amical",
+        )
+    ):
+        return 1.02
+
+    return 1.00
+
+
+def facteur_blessures(value):
+    """
+    Facteur blessures.
+    """
+
+    if isinstance(value, bool):
+        return 0.96 if value else 1.00
+
+    value = _safe_float(
+        value,
+        default=0.0,
+    )
+
+    if value <= 0:
+        return 1.00
+
+    return _clamp(
+        1.0 - 0.015 * value,
+        0.80,
+        1.00,
     )
 
 
-def facteur_fatigue(a):
-    if not a:
-        return 1.0
+def facteur_fatigue(value):
+    """
+    Facteur fatigue.
+    """
 
-    if isinstance(a, bool):
-        return 0.95 if a else 1.0
+    if isinstance(value, bool):
+        return 0.96 if value else 1.00
 
-    try:
-        x = float(a)
-    except (TypeError, ValueError):
-        return 1.0
+    value = _safe_float(
+        value,
+        default=0.0,
+    )
 
-    return max(
+    if value <= 0:
+        return 1.00
+
+    return _clamp(
+        1.0 - 0.012 * value,
         0.80,
-        min(
-            1.05,
-            1.0 - x,
-        ),
+        1.00,
     )
 
 
 def facteur_classement(
-    pos_dom,
-    pos_ext,
-    total,
+    pos_dom=None,
+    pos_ext=None,
+    total_equipes=None,
 ):
-    if (
-        pos_dom is None
-        or pos_ext is None
-        or total is None
-        or total <= 1
-    ):
-        return 1.0, 1.0
+    """
+    Ajustement faible basé sur l'écart de classement.
+    """
 
-    try:
-        pos_dom = float(pos_dom)
-        pos_ext = float(pos_ext)
-        total = float(total)
-    except (TypeError, ValueError):
-        return 1.0, 1.0
+    if pos_dom is None or pos_ext is None:
+        return 1.00
 
-    force_dom = (
-        total - pos_dom + 1.0
-    ) / total
+    pos_dom = _safe_float(pos_dom)
+    pos_ext = _safe_float(pos_ext)
 
-    force_ext = (
-        total - pos_ext + 1.0
-    ) / total
+    if pos_dom <= 0 or pos_ext <= 0:
+        return 1.00
 
-    diff = force_dom - force_ext
+    difference = pos_ext - pos_dom
 
-    f_dom = 1.0 + diff * 0.20
-    f_ext = 1.0 - diff * 0.20
+    adjustment = 1.0 + (
+        0.008 * difference
+    )
 
-    return (
-        max(0.85, min(1.15, f_dom)),
-        max(0.85, min(1.15, f_ext)),
+    return _clamp(
+        adjustment,
+        0.90,
+        1.10,
     )
 
 
-def facteur_ht(matchs):
-    ratio = compute_ratio_ht(matchs)
+def facteur_ht(
+    ratio_ht,
+):
+    """
+    Sécurisation du ratio HT.
+    """
 
-    if ratio <= 0:
-        return 1.0
+    return _clamp(
+        ratio_ht,
+        0.35,
+        0.60,
+    )
 
-    return 0.98 + ratio * 0.04
 
+def facteur_forme_recente(
+    matchs,
+    domicile=True,
+):
+    """
+    Facteur forme récent simple.
 
-def facteur_forme_recente(matchs):
+    Accepte des structures hétérogènes :
+    - dict avec buts marqués/encaissés ;
+    - tuples ;
+    - objets numériques.
+    """
+
+    matchs = _safe_list(matchs)
+
     if not matchs:
-        return 1.0
+        return 1.00
 
-    score = 0.0
-    poids_total = 0.0
+    scores = []
 
-    n = len(matchs)
+    for match in matchs:
 
-    for i, m in enumerate(matchs):
-        bp = m.get("bp", 0) or 0
-        bc = m.get("bc", 0) or 0
+        if isinstance(match, dict):
 
-        poids = i + 1
-        score += (
-            (bp - bc) * poids
-        )
-        poids_total += poids
+            gf = (
+                match.get("gf")
+                if match.get("gf") is not None
+                else match.get("goals_for")
+            )
 
-    if poids_total <= 0:
-        return 1.0
+            ga = (
+                match.get("ga")
+                if match.get("ga") is not None
+                else match.get("goals_against")
+            )
 
-    forme = score / poids_total
+            if gf is not None and ga is not None:
+                scores.append(
+                    _safe_float(gf)
+                    - _safe_float(ga)
+                )
 
-    return max(
-        0.88,
-        min(
-            1.12,
-            1.0 + forme * 0.025,
-        ),
+        elif isinstance(match, (list, tuple)):
+
+            if len(match) >= 2:
+                scores.append(
+                    _safe_float(match[0])
+                    - _safe_float(match[1])
+                )
+
+    if not scores:
+        return 1.00
+
+    diff = moy(scores)
+
+    adjustment = 1.0 + (
+        0.025 * diff
+    )
+
+    return _clamp(
+        adjustment,
+        0.90,
+        1.10,
     )
 
 
-def facteur_h2h(h2h_matchs):
-    if not h2h_matchs:
-        return 1.0, 1.0
+def facteur_h2h(
+    h2h,
+):
+    """
+    Ajustement H2H très modéré afin d'éviter
+    le surpoids de l'historique ancien.
+    """
 
-    dom = 0
-    ext = 0
+    matchs = _safe_list(h2h)
 
-    for m in h2h_matchs:
-        bp = m.get("bp")
-        bc = m.get("bc")
+    if not matchs:
+        return 1.00
 
-        if bp is None or bc is None:
-            continue
+    differentiels = []
 
-        if bp > bc:
-            dom += 1
-        elif bc > bp:
-            ext += 1
+    for match in matchs:
 
-    total = dom + ext
+        if isinstance(match, dict):
 
-    if total <= 0:
-        return 1.0, 1.0
+            gf = match.get("gf")
+            ga = match.get("ga")
 
-    avantage = (
-        dom - ext
-    ) / total
+            if gf is not None and ga is not None:
+                differentiels.append(
+                    _safe_float(gf)
+                    - _safe_float(ga)
+                )
+
+        elif isinstance(match, (list, tuple)):
+
+            if len(match) >= 2:
+                differentiels.append(
+                    _safe_float(match[0])
+                    - _safe_float(match[1])
+                )
+
+    if not differentiels:
+        return 1.00
+
+    return _clamp(
+        1.0 + 0.01 * moy(differentiels),
+        0.94,
+        1.06,
+    )
+
+
+# ============================================================
+# EV / FIABILITÉ / STAKE
+# ============================================================
+
+def compute_ev(
+    probabilite,
+    cote,
+):
+    """
+    EV décimal :
+        p * cote - 1
+    """
+
+    p = _clamp(probabilite)
+
+    cote = _safe_float(cote)
+
+    if cote <= 1.0:
+        return 0.0
 
     return (
-        max(
-            0.92,
-            min(
-                1.08,
-                1.0 + avantage * 0.06,
-            ),
-        ),
-        max(
-            0.92,
-            min(
-                1.08,
-                1.0 - avantage * 0.06,
-            ),
-        ),
-    )
-
-
-# ============================================================
-# EV / FIABILITE / STAKE
-# ============================================================
-
-def compute_ev(p, cote):
-    try:
-        return (
-            float(p) * float(cote)
-        ) - 1.0
-    except (TypeError, ValueError):
-        return -1.0
+        p * cote
+    ) - 1.0
 
 
 def compute_reliability(
-    p,
-    cote,
-    ev,
+    probabilite,
+    cote=0.0,
 ):
-    try:
-        p = float(p)
-        cote = float(cote)
-        ev = float(ev)
-    except (TypeError, ValueError):
-        return 0.0
+    """
+    Score de fiabilité simple combinant probabilité
+    et cohérence prix/probabilité.
+    """
 
-    fiab = p
+    p = _clamp(probabilite)
 
-    if ev > 0:
-        fiab += min(
-            0.10,
-            ev * 0.20,
+    cote = _safe_float(cote)
+
+    if cote > 1.0:
+        implied = 1.0 / cote
+        coherence = 1.0 - abs(
+            p - implied
         )
+    else:
+        coherence = 0.50
 
-    return max(
-        0.0,
-        min(
-            1.0,
-            fiab,
-        ),
+    reliability = (
+        0.70 * p
+        + 0.30 * coherence
+    )
+
+    return _clamp(
+        reliability
     )
 
 
 def compute_stake(
-    p,
-    cote,
-    fiab,
     ev,
+    fiabilite,
+    confiance=1.0,
 ):
-    if (
-        p <= 0
-        or cote <= 1
-        or ev <= 0
-        or fiab <= 0
-    ):
-        return 0.0
+    """
+    Stake indicatif borné.
+    """
 
-    edge = max(
+    ev = max(
         0.0,
-        ev,
+        _safe_float(ev),
     )
 
-    if fiab >= 0.85:
-        multiplicateur = 1.5
-    elif fiab >= 0.80:
-        multiplicateur = 1.0
-    elif fiab >= 0.75:
-        multiplicateur = 0.5
-    else:
-        multiplicateur = 0.25
+    fiabilite = _clamp(
+        fiabilite
+    )
+
+    confiance = _clamp(
+        confiance
+    )
+
+    base = ev * 100.0
+
+    stake = (
+        base
+        * fiabilite
+        * confiance
+    )
 
     return round(
-        min(
-            1.5,
-            edge * 100 * multiplicateur,
+        _clamp(
+            stake,
+            0.0,
+            5.0,
         ),
         2,
     )
 
 
-SEUIL_FIABILITE = 0.75
-SEUIL_VALUE_1X2 = 0.05
-SEUIL_CONFIANCE = 0.70
-
+# ============================================================
+# DISCIPLINE / DÉCISION
+# ============================================================
 
 def appliquer_filtres_discipline(
-    p,
-    cote,
-    ev,
-    fiab,
+    candidat,
 ):
-    raisons = []
+    """
+    Filtre de discipline QFTE.
+    """
 
-    if p < SEUIL_CONFIANCE:
-        raisons.append(
-            "Confiance insuffisante"
+    if not isinstance(candidat, dict):
+        return None
+
+    candidat = dict(candidat)
+
+    probabilite = _clamp(
+        candidat.get(
+            "probabilite",
+            candidat.get("proba", 0.0),
         )
-
-    if ev < SEUIL_VALUE_1X2:
-        raisons.append(
-            "Value insuffisante"
-        )
-
-    if fiab < SEUIL_FIABILITE:
-        raisons.append(
-            "Fiabilite insuffisante"
-        )
-
-    return (
-        len(raisons) == 0,
-        raisons,
     )
+
+    cote = _safe_float(
+        candidat.get("cote", 0.0)
+    )
+
+    ev = compute_ev(
+        probabilite,
+        cote,
+    )
+
+    fiabilite = _clamp(
+        candidat.get(
+            "fiabilite",
+            compute_reliability(
+                probabilite,
+                cote,
+            ),
+        )
+    )
+
+    candidat["probabilite"] = probabilite
+    candidat["proba"] = probabilite
+    candidat["cote"] = cote
+    candidat["ev"] = ev
+    candidat["fiabilite"] = fiabilite
+
+    return candidat
 
 
 def classify_decision(
-    fiab,
     ev,
+    fiabilite,
+    probabilite,
 ):
-    if (
-        fiab >= 0.85
-        and ev >= 0.10
-    ):
-        return "FORTE", "A"
+    """
+    Classification décisionnelle.
+    """
+
+    ev = _safe_float(ev)
+    fiabilite = _clamp(fiabilite)
+    probabilite = _clamp(probabilite)
 
     if (
-        fiab >= 0.80
-        and ev >= 0.07
+        ev >= SEUIL_VALUE_1X2
+        and fiabilite >= SEUIL_FIABILITE
+        and probabilite >= SEUIL_CONFIANCE
     ):
-        return "VALIDEE", "B"
+        return "VALUE"
 
     if (
-        fiab >= 0.75
-        and ev >= 0.05
+        ev >= 0.0
+        and fiabilite >= 0.60
     ):
-        return "PRUDENCE", "C"
+        return "WATCH"
 
-    return "REJET", "D"
+    return "NO BET"
 
-
-# ============================================================
-# CANDIDAT SIMPLE
-# ============================================================
 
 def eval_candidat_simple(
-    label,
-    p,
-    cote,
-    marche=None,
+    marche,
+    selection,
+    probabilite,
+    cote=None,
+    ligne=None,
+    direction=None,
 ):
-    if cote is None:
-        return None
+    """
+    Création standardisée d'un candidat QFTE.
+    """
 
-    try:
-        cote = float(cote)
-        p = float(p)
-    except (TypeError, ValueError):
-        return None
+    probabilite = _clamp(
+        probabilite
+    )
 
-    if cote <= 1:
-        return None
+    cote = _safe_float(
+        cote
+    )
 
     ev = compute_ev(
-        p,
+        probabilite,
         cote,
     )
 
-    fiab = compute_reliability(
-        p,
+    fiabilite = compute_reliability(
+        probabilite,
         cote,
+    )
+
+    decision = classify_decision(
         ev,
+        fiabilite,
+        probabilite,
     )
 
-    passe, raisons = (
-        appliquer_filtres_discipline(
-            p,
-            cote,
-            ev,
-            fiab,
-        )
-    )
-
-    decision, niveau = (
-        classify_decision(
-            fiab,
-            ev,
-        )
-    )
-
-    stake = (
-        compute_stake(
-            p,
-            cote,
-            fiab,
-            ev,
-        )
-        if passe
-        else 0.0
+    stake = compute_stake(
+        ev,
+        fiabilite,
     )
 
     return {
-        "selection": label,
         "marche": marche,
-        "p": round(p, 4),
-        "cote": round(cote, 3),
-        "ev": round(ev, 4),
-        "fiabilite": round(fiab, 3),
-        "passe_filtres": passe,
-        "raisons_rejet": raisons,
-        "decision": decision,
-        "niveau": niveau,
+        "selection": selection,
+        "direction": direction,
+        "ligne": ligne,
+        "probabilite": round(
+            probabilite,
+            4,
+        ),
+        "proba": round(
+            probabilite,
+            4,
+        ),
+        "cote": round(
+            cote,
+            4,
+        ),
+        "ev": round(
+            ev,
+            4,
+        ),
+        "fiabilite": round(
+            fiabilite,
+            4,
+        ),
         "stake": stake,
-                }
+        "decision": decision,
+    }
 
 # ============================================================
-# AJUSTEMENTS QFTE
+# BLOC 2A/2B
+# AJUSTEMENTS QFTE — HANDICAP — OVER/UNDER
+# ============================================================
+
+
+# ============================================================
+# AJUSTEMENTS FORENSICS
 # ============================================================
 
 def appliquer_forensics_au_candidat(
     candidat,
-    forensics,
+    forensics=None,
 ):
-    if not candidat or not forensics:
-        return candidat
+    """
+    Applique l'analyse Market Forensics au candidat.
+    """
 
-    fiab_adj = ajuster_fiabilite(
-        candidat["fiabilite"],
-        forensics,
-    )
+    if not isinstance(candidat, dict):
+        return None
 
-    candidat["ajustement_forensics"] = round(
-        fiab_adj - candidat["fiabilite"],
-        4,
-    )
+    resultat = dict(candidat)
 
-    candidat["fiabilite"] = round(
-        max(
-            0.0,
-            min(
-                fiab_adj,
-                1.0,
-            ),
-        ),
-        3,
-    )
+    if not forensics:
+        return resultat
 
-    candidat["ev"] = round(
-        candidat["p"] * candidat["cote"] - 1.0,
-        4,
-    )
+    try:
+        if ajuster_fiabilite is not None:
 
-    candidat["passe_filtres"] = (
-        candidat["fiabilite"] >= SEUIL_FIABILITE
-        and candidat["ev"] >= SEUIL_VALUE_1X2
-        and candidat["p"] >= SEUIL_CONFIANCE
-    )
+            valeur = ajuster_fiabilite(
+                resultat,
+                forensics,
+            )
 
-    candidat["decision"], candidat["niveau"] = (
-        classify_decision(
-            candidat["fiabilite"],
-            candidat["ev"],
-        )
-    )
+            if isinstance(valeur, dict):
+                resultat.update(valeur)
 
-    candidat["stake"] = (
-        compute_stake(
-            candidat["p"],
-            candidat["cote"],
-            candidat["fiabilite"],
-            candidat["ev"],
-        )
-        if candidat["passe_filtres"]
-        else 0.0
-    )
+            elif isinstance(valeur, (int, float)):
+                resultat["fiabilite"] = _clamp(
+                    valeur
+                )
 
-    return candidat
+    except Exception:
+        pass
 
+    return resultat
+
+
+# ============================================================
+# AJUSTEMENTS STACKING
+# ============================================================
 
 def appliquer_stacking_au_candidat(
     candidat,
-    stacking,
+    stacking=None,
 ):
-    if not candidat or not stacking:
-        return candidat
+    """
+    Applique le méta-ensemble / stacking QFTE.
+    """
 
-    fiab_avant = candidat["fiabilite"]
+    if not isinstance(candidat, dict):
+        return None
 
-    fiab_adj = ajuster_fiabilite_pcs(
-        candidat["fiabilite"],
-        stacking,
-    )
+    resultat = dict(candidat)
 
-    candidat["ajustement_stacking"] = round(
-        fiab_adj - fiab_avant,
-        4,
-    )
+    if not stacking:
+        return resultat
 
-    candidat["fiabilite"] = round(
-        max(
-            0.0,
-            min(
-                fiab_adj,
-                1.0,
-            ),
-        ),
-        3,
-    )
+    try:
+        if ajuster_fiabilite_pcs is not None:
 
-    candidat["passe_filtres"] = (
-        candidat["fiabilite"] >= SEUIL_FIABILITE
-        and candidat["ev"] >= SEUIL_VALUE_1X2
-        and candidat["p"] >= SEUIL_CONFIANCE
-    )
+            valeur = ajuster_fiabilite_pcs(
+                resultat,
+                stacking,
+            )
 
-    candidat["decision"], candidat["niveau"] = (
-        classify_decision(
-            candidat["fiabilite"],
-            candidat["ev"],
-        )
-    )
+            if isinstance(valeur, dict):
+                resultat.update(valeur)
 
-    candidat["stake"] = (
-        compute_stake(
-            candidat["p"],
-            candidat["cote"],
-            candidat["fiabilite"],
-            candidat["ev"],
-        )
-        if candidat["passe_filtres"]
-        else 0.0
-    )
+            elif isinstance(valeur, (int, float)):
+                resultat["fiabilite"] = _clamp(
+                    valeur
+                )
 
-    return candidat
+    except Exception:
+        pass
 
+    return resultat
+
+
+# ============================================================
+# AJUSTEMENTS CROSS-MARKET
+# ============================================================
 
 def appliquer_consistency_au_candidat(
     candidat,
-    cross_market,
+    cross_market=None,
 ):
-    if not candidat or not cross_market:
-        return candidat
+    """
+    Applique le contrôle de cohérence cross-market.
+    """
 
-    fiab_avant = candidat["fiabilite"]
+    if not isinstance(candidat, dict):
+        return None
 
-    fiab_adj = ajuster_fiabilite_consistency(
-        candidat["fiabilite"],
-        cross_market,
-    )
+    resultat = dict(candidat)
 
-    candidat["ajustement_consistency"] = round(
-        fiab_adj - fiab_avant,
-        4,
-    )
+    if not cross_market:
+        return resultat
 
-    candidat["fiabilite"] = round(
-        max(
-            0.0,
-            min(
-                fiab_adj,
-                1.0,
-            ),
-        ),
-        3,
-    )
+    try:
+        if ajuster_fiabilite_consistency is not None:
 
-    candidat["passe_filtres"] = (
-        candidat["fiabilite"] >= SEUIL_FIABILITE
-        and candidat["ev"] >= SEUIL_VALUE_1X2
-        and candidat["p"] >= SEUIL_CONFIANCE
-    )
+            valeur = ajuster_fiabilite_consistency(
+                resultat,
+                cross_market,
+            )
 
-    candidat["decision"], candidat["niveau"] = (
-        classify_decision(
-            candidat["fiabilite"],
-            candidat["ev"],
-        )
-    )
+            if isinstance(valeur, dict):
+                resultat.update(valeur)
 
-    candidat["stake"] = (
-        compute_stake(
-            candidat["p"],
-            candidat["cote"],
-            candidat["fiabilite"],
-            candidat["ev"],
-        )
-        if candidat["passe_filtres"]
-        else 0.0
-    )
+            elif isinstance(valeur, (int, float)):
+                resultat["fiabilite"] = _clamp(
+                    valeur
+                )
 
-    return candidat
+    except Exception:
+        pass
+
+    return resultat
 
 
 # ============================================================
-# HANDICAP COMPLET
+# HANDICAP — DOMICILE
 # ============================================================
 
 def calcul_handicap_complet(
-    matrix,
-    cote_dom,
-    cote_ext,
-    hcp,
+    matrice,
+    hcp_dom,
+    hcp_ext=None,
+    cote_dom=None,
+    cote_ext=None,
 ):
-    p_dom_gain, p_dom_remb = (
-        proba_handicap_dom(
-            matrix,
-            hcp,
-        )
+    """
+    Calcul du handicap domicile / extérieur.
+
+    La matrice de scores reste la base probabiliste.
+    """
+
+    hcp_dom = _safe_float(
+        hcp_dom
     )
 
-    p_ext_gain, p_ext_remb = (
-        proba_handicap_ext(
-            matrix,
-            hcp,
-        )
+    resultat_dom = proba_handicap_dom(
+        matrice,
+        hcp_dom,
     )
 
     candidats = []
 
-    if cote_dom and cote_dom > 0:
-        candidats.append(
-            eval_candidat_simple(
-                "Domicile AH " + str(hcp),
-                p_dom_gain,
-                cote_dom,
-                "Asian Handicap",
-            )
+    # --------------------------------------------------------
+    # Candidat domicile
+    # --------------------------------------------------------
+
+    if cote_dom is not None:
+
+        candidat_dom = eval_candidat_simple(
+            marche="Handicap",
+            selection="Domicile",
+            probabilite=resultat_dom["win"],
+            cote=cote_dom,
+            ligne=hcp_dom,
+            direction="home",
         )
 
-    if cote_ext and cote_ext > 0:
         candidats.append(
-            eval_candidat_simple(
-                "Exterieur AH " + str(hcp),
-                p_ext_gain,
-                cote_ext,
-                "Asian Handicap",
-            )
+            candidat_dom
         )
+
+    # --------------------------------------------------------
+    # Candidat extérieur
+    # --------------------------------------------------------
+
+    if hcp_ext is not None:
+
+        hcp_ext = _safe_float(
+            hcp_ext
+        )
+
+        resultat_ext = proba_handicap_ext(
+            matrice,
+            hcp_ext,
+        )
+
+        if cote_ext is not None:
+
+            candidat_ext = eval_candidat_simple(
+                marche="Handicap",
+                selection="Extérieur",
+                probabilite=resultat_ext["win"],
+                cote=cote_ext,
+                ligne=hcp_ext,
+                direction="away",
+            )
+
+            candidats.append(
+                candidat_ext
+            )
+
+    else:
+
+        resultat_ext = {
+            "win": 0.0,
+            "push": 0.0,
+            "lose": 0.0,
+        }
 
     return {
-        "handicap": hcp,
-        "p_dom_gain": round(
-            p_dom_gain,
-            4,
-        ),
-        "p_dom_remb": round(
-            p_dom_remb,
-            4,
-        ),
-        "p_ext_gain": round(
-            p_ext_gain,
-            4,
-        ),
-        "p_ext_remb": round(
-            p_ext_remb,
-            4,
-        ),
-        "candidats": [
-            c
-            for c in candidats
-            if c is not None
-        ],
+        "ligne_dom": hcp_dom,
+        "ligne_ext": hcp_ext,
+        "domicile": resultat_dom,
+        "exterieur": resultat_ext,
+        "candidats": candidats,
     }
 
 
 # ============================================================
-# OVER / UNDER
+# DISTRIBUTION DU TOTAL DE BUTS
+# ============================================================
+
+def _probs_total_goals(
+    lambda_total,
+    max_goals=15,
+):
+    """
+    Distribution Poisson du nombre total de buts.
+    """
+
+    lambda_total = max(
+        0.0,
+        _safe_float(lambda_total),
+    )
+
+    max_goals = max(
+        5,
+        int(max_goals),
+    )
+
+    probs = [
+        poisson_pmf(
+            k,
+            lambda_total,
+        )
+        for k in range(
+            max_goals + 1
+        )
+    ]
+
+    total = sum(probs)
+
+    if total > EPS:
+
+        probs = [
+            p / total
+            for p in probs
+        ]
+
+    return probs
+
+
+# ============================================================
+# OVER / UNDER — POISSON
 # ============================================================
 
 def calcul_ou_poisson(
@@ -905,319 +1276,441 @@ def calcul_ou_poisson(
     ligne,
 ):
     """
-    Calcul générique O/U à partir de la distribution
-    de Poisson du total de buts.
+    Calcul Over / Under.
+
+    Ligne entière :
+        Under = total < ligne
+        Push  = total = ligne
+        Over  = total > ligne
+
+    Ligne .5 :
+        aucun push.
     """
 
-    if lambda_total <= 0:
-        return {
-            "p_over": 0.0,
-            "p_under": 1.0,
-        }
+    lambda_total = max(
+        0.0,
+        _safe_float(lambda_total),
+    )
 
-    max_goals = 15
+    ligne = _safe_float(
+        ligne
+    )
 
-    probs = [
-        poisson_pmf(
-            k,
-            lambda_total,
+    probs = _probs_total_goals(
+        lambda_total
+    )
+
+    # --------------------------------------------------------
+    # Ligne entière
+    # --------------------------------------------------------
+
+    if abs(
+        ligne - round(ligne)
+    ) < 1e-9:
+
+        seuil = int(
+            round(ligne)
         )
-        for k in range(max_goals + 1)
-    ]
-
-    total = sum(probs)
-
-    if total > 0:
-        probs = [
-            p / total
-            for p in probs
-        ]
-
-    ligne = float(ligne)
-
-    # Ligne entière : Over 2.0 / Under 2.0
-    if abs(ligne - round(ligne)) < 1e-9:
-        seuil = int(round(ligne))
 
         p_under = sum(
             probs[:seuil]
         )
 
-        p_push = (
-            probs[seuil]
-            if 0 <= seuil < len(probs)
-            else 0.0
-        )
+        if (
+            0 <= seuil
+            < len(probs)
+        ):
+            p_push = probs[seuil]
+        else:
+            p_push = 0.0
 
         p_over = max(
             0.0,
-            1.0 - p_under - p_push,
+            1.0
+            - p_under
+            - p_push,
         )
 
-        return {
-            "p_over": p_over,
-            "p_under": p_under,
-            "p_push": p_push,
-        }
+    # --------------------------------------------------------
+    # Ligne décimale
+    # --------------------------------------------------------
 
-    # Ligne .5 : Over 2.5 / Under 2.5
-    seuil = math.floor(ligne)
+    else:
 
-    p_under = sum(
-        probs[:seuil + 1]
-    )
-
-    p_over = max(
-        0.0,
-        1.0 - p_under,
-    )
-
-    return {
-        "p_over": p_over,
-        "p_under": p_under,
-        "p_push": 0.0,
-    }
-
-
-def calcul_ou_complet_from_signature(
-    matchs_dom,
-    matchs_ext,
-    cote_over,
-    cote_under,
-    ligne,
-    contexte=None,
-):
-    contexte = contexte or {}
-
-    try:
-        signature = analyser_signature_foot(
-            matchs_dom,
-            matchs_ext,
-            contexte,
+        seuil = math.floor(
+            ligne
         )
 
-        ou = calculer_over_under_avec_ic(
-            signature,
-            ligne,
-        )
-    except Exception:
-        signature = {}
-
-        lambda_total = (
-            moy([
-                m.get("bp", 0)
-                for m in matchs_dom
-            ])
-            + moy([
-                m.get("bp", 0)
-                for m in matchs_ext
-            ])
+        p_under = sum(
+            probs[:seuil + 1]
         )
 
-        ou = calcul_ou_poisson(
-            max(
-                lambda_total,
-                0.10,
-            ),
-            ligne,
-        )
+        p_push = 0.0
 
-    p_over = ou.get(
-        "p_over",
-        ou.get(
-            "prob_over",
+        p_over = max(
             0.0,
-        ),
-    )
-
-    p_under = ou.get(
-        "p_under",
-        ou.get(
-            "prob_under",
-            0.0,
-        ),
-    )
-
-    candidats = []
-
-    if cote_over and cote_over > 0:
-        candidats.append(
-            eval_candidat_simple(
-                "Over " + str(ligne),
-                p_over,
-                cote_over,
-                "Over/Under",
-            )
-        )
-
-    if cote_under and cote_under > 0:
-        candidats.append(
-            eval_candidat_simple(
-                "Under " + str(ligne),
-                p_under,
-                cote_under,
-                "Over/Under",
-            )
+            1.0 - p_under,
         )
 
     return {
         "ligne": ligne,
-        "signature": signature,
-        "ou": ou,
-        "p_over": round(
-            p_over,
-            4,
+
+        "p_over": _clamp(
+            p_over
         ),
-        "p_under": round(
-            p_under,
-            4,
+
+        "p_under": _clamp(
+            p_under
         ),
-        "candidats": [
-            c
-            for c in candidats
-            if c is not None
-        ],
-    }
+
+        "p_push": _clamp(
+            p_push
+        ),
+
+        "distribution": probs,
+        }
+
+# ============================================================
+# BLOC 2B/2B
+# SIGNATURE — MARCHÉS — HISTORIQUES — LAMBDAS
+# ============================================================
 
 
 # ============================================================
-# MARCHES MI-TEMPS / 2E MI-TEMPS
+# OVER / UNDER VIA SIGNATURE FOOT
+# ============================================================
+
+def calcul_ou_complet_from_signature(
+    home,
+    away,
+    ligne,
+    lambda_total,
+):
+    """
+    Calcule l'Over/Under via signature_foot lorsque
+    disponible, avec fallback Poisson.
+    """
+
+    if calculer_over_under_avec_ic is not None:
+
+        try:
+
+            resultat = calculer_over_under_avec_ic(
+                home,
+                away,
+                ligne,
+            )
+
+            if isinstance(
+                resultat,
+                dict,
+            ):
+
+                p_over = _safe_float(
+                    resultat.get(
+                        "p_over",
+                        resultat.get(
+                            "over",
+                            0.0,
+                        ),
+                    )
+                )
+
+                p_under = _safe_float(
+                    resultat.get(
+                        "p_under",
+                        resultat.get(
+                            "under",
+                            0.0,
+                        ),
+                    )
+                )
+
+                total = (
+                    p_over
+                    + p_under
+                )
+
+                if total > EPS:
+
+                    p_over /= total
+                    p_under /= total
+
+                    return {
+                        "ligne": ligne,
+                        "p_over": _clamp(
+                            p_over
+                        ),
+                        "p_under": _clamp(
+                            p_under
+                        ),
+                        "p_push": 0.0,
+                        "source": "signature_foot",
+                    }
+
+        except Exception:
+            pass
+
+    # --------------------------------------------------------
+    # Fallback Poisson
+    # --------------------------------------------------------
+
+    resultat = calcul_ou_poisson(
+        lambda_total,
+        ligne,
+    )
+
+    resultat["source"] = "poisson"
+
+    return resultat
+
+
+# ============================================================
+# CANDIDAT 1X2
+# ============================================================
+
+def _construire_candidat_1x2(
+    selection,
+    probabilite,
+    cote,
+):
+    """
+    Construit un candidat 1X2 standardisé.
+    """
+
+    return eval_candidat_simple(
+        marche="1X2",
+        selection=selection,
+        probabilite=probabilite,
+        cote=cote,
+    )
+
+
+# ============================================================
+# MARCHÉS MI-TEMPS / 2e MI-TEMPS
 # ============================================================
 
 def calcul_marches_2mt(
-    lambda_total,
-    ratio_ht,
-    cote_over_ht=None,
-    cote_under_ht=None,
-    cote_btts=None,
+    p1_ht,
+    px_ht,
+    p2_ht,
+    p1_2h,
+    px_2h,
+    p2_2h,
+    cotes_ht=None,
+    cotes_2h=None,
 ):
-    lambda_ht = max(
-        lambda_total * ratio_ht,
-        0.01,
-    )
+    """
+    Construit la structure des marchés HT / 2H.
 
-    lambda_2mt = max(
-        lambda_total - lambda_ht,
-        0.01,
-    )
+    main.py V23.0 attend notamment :
+        p1_ht
+        px_ht
+        p2_ht
+        p1_2h
+        px_2h
+        p2_2h
+        ht
+        2h
+    """
 
-    p_over_ht = (
-        1.0
-        - poisson_pmf(
-            0,
-            lambda_ht,
+    cotes_ht = (
+        cotes_ht
+        if isinstance(
+            cotes_ht,
+            dict,
         )
+        else {}
     )
 
-    p_over_2mt = (
-        1.0
-        - poisson_pmf(
-            0,
-            lambda_2mt,
+    cotes_2h = (
+        cotes_2h
+        if isinstance(
+            cotes_2h,
+            dict,
         )
+        else {}
     )
 
-    p_btts = (
-        (1.0 - math.exp(-lambda_ht))
-        * (1.0 - math.exp(-lambda_2mt))
-    )
+    candidats_ht = []
+    candidats_2h = []
 
-    candidats = []
+    # --------------------------------------------------------
+    # Première mi-temps
+    # --------------------------------------------------------
 
-    if cote_over_ht and cote_over_ht > 0:
-        candidats.append(
-            eval_candidat_simple(
-                "Over 0.5 HT",
-                p_over_ht,
-                cote_over_ht,
-                "Mi-temps",
+    if cotes_ht:
+
+        if cotes_ht.get("1") is not None:
+
+            candidats_ht.append(
+                _construire_candidat_1x2(
+                    "1 HT",
+                    p1_ht,
+                    cotes_ht.get("1"),
+                )
             )
-        )
 
-    if cote_under_ht and cote_under_ht > 0:
-        candidats.append(
-            eval_candidat_simple(
-                "Under 0.5 HT",
-                1.0 - p_over_ht,
-                cote_under_ht,
-                "Mi-temps",
-            )
-        )
+        if cotes_ht.get("X") is not None:
 
-    if cote_btts and cote_btts > 0:
-        candidats.append(
-            eval_candidat_simple(
-                "BTTS Oui",
-                p_btts,
-                cote_btts,
-                "BTTS",
+            candidats_ht.append(
+                _construire_candidat_1x2(
+                    "X HT",
+                    px_ht,
+                    cotes_ht.get("X"),
+                )
             )
-        )
+
+        if cotes_ht.get("2") is not None:
+
+            candidats_ht.append(
+                _construire_candidat_1x2(
+                    "2 HT",
+                    p2_ht,
+                    cotes_ht.get("2"),
+                )
+            )
+
+    # --------------------------------------------------------
+    # Deuxième mi-temps
+    # --------------------------------------------------------
+
+    if cotes_2h:
+
+        if cotes_2h.get("1") is not None:
+
+            candidats_2h.append(
+                _construire_candidat_1x2(
+                    "1 2H",
+                    p1_2h,
+                    cotes_2h.get("1"),
+                )
+            )
+
+        if cotes_2h.get("X") is not None:
+
+            candidats_2h.append(
+                _construire_candidat_1x2(
+                    "X 2H",
+                    px_2h,
+                    cotes_2h.get("X"),
+                )
+            )
+
+        if cotes_2h.get("2") is not None:
+
+            candidats_2h.append(
+                _construire_candidat_1x2(
+                    "2 2H",
+                    p2_2h,
+                    cotes_2h.get("2"),
+                )
+            )
 
     return {
-        "lambda_ht": round(
-            lambda_ht,
+        "p1_ht": round(
+            _safe_float(p1_ht),
             4,
         ),
-        "lambda_2mt": round(
-            lambda_2mt,
+
+        "px_ht": round(
+            _safe_float(px_ht),
             4,
         ),
-        "p_over_ht": round(
-            p_over_ht,
+
+        "p2_ht": round(
+            _safe_float(p2_ht),
             4,
         ),
-        "p_over_2mt": round(
-            p_over_2mt,
+
+        "p1_2h": round(
+            _safe_float(p1_2h),
             4,
         ),
-        "p_btts": round(
-            p_btts,
+
+        "px_2h": round(
+            _safe_float(px_2h),
             4,
         ),
-        "candidats": [
-            c
-            for c in candidats
-            if c is not None
-        ],
+
+        "p2_2h": round(
+            _safe_float(p2_2h),
+            4,
+        ),
+
+        "ht": candidats_ht,
+        "2h": candidats_2h,
     }
 
 
 # ============================================================
-# DIVERGENCES MODELE / MARCHE
+# DIVERGENCES MODÈLE / MARCHÉ
 # ============================================================
 
 def detecter_divergences(
-    p_model,
-    p_market,
-    seuil=0.10,
+    p1,
+    px,
+    p2,
+    probabilites_marche=None,
 ):
-    if p_market is None:
-        return {
-            "divergence": False,
-            "ecart": None,
-            "type": None,
-        }
+    """
+    Détecte les écarts importants entre modèle et marché.
+    """
 
-    ecart = p_model - p_market
+    divergences = []
 
-    if abs(ecart) < seuil:
-        typ = "faible"
+    if not isinstance(
+        probabilites_marche,
+        dict,
+    ):
+        return divergences
 
-    elif ecart > 0:
-        typ = "modele_superieur_marche"
-
-    else:
-        typ = "marche_superieur_modele"
-
-    return {
-        "divergence": abs(ecart) >= seuil,
-        "ecart": round(
-            ecart,
-            4,
-        ),
-        "type": typ,
+    modele = {
+        "1": _safe_float(p1),
+        "X": _safe_float(px),
+        "2": _safe_float(p2),
     }
+
+    for selection in (
+        "1",
+        "X",
+        "2",
+    ):
+
+        marche = _safe_float(
+            probabilites_marche.get(
+                selection,
+                0.0,
+            )
+        )
+
+        ecart = (
+            modele[selection]
+            - marche
+        )
+
+        if abs(ecart) >= 0.08:
+
+            divergences.append({
+                "selection": selection,
+
+                "modele": round(
+                    modele[selection],
+                    4,
+                ),
+
+                "marche": round(
+                    marche,
+                    4,
+                ),
+
+                "ecart": round(
+                    ecart,
+                    4,
+                ),
+            })
+
+    return divergences
 
 
 # ============================================================
@@ -1227,29 +1720,63 @@ def detecter_divergences(
 def _normaliser_matchs(
     matchs,
 ):
-    if not matchs:
+    """
+    Normalise les différentes structures historiques.
+    """
+
+    if matchs is None:
         return []
 
-    resultat = []
+    if isinstance(
+        matchs,
+        list,
+    ):
+        return matchs
 
-    for m in matchs:
-        if not isinstance(m, dict):
-            continue
+    if isinstance(
+        matchs,
+        tuple,
+    ):
+        return list(matchs)
 
-        resultat.append({
-            "bp": m.get("bp"),
-            "bc": m.get("bc"),
-            "ht_bp": m.get("ht_bp"),
-            "ht_bc": m.get("ht_bc"),
-        })
+    if isinstance(
+        matchs,
+        dict,
+    ):
 
-    return resultat
+        for key in (
+            "matchs",
+            "matches",
+            "results",
+            "data",
+            "historique",
+        ):
+
+            if key in matchs:
+
+                valeur = matchs[key]
+
+                if isinstance(
+                    valeur,
+                    list,
+                ):
+                    return valeur
+
+        return [matchs]
+
+    return [matchs]
 
 
 def _fusionner_historiques(
     contextuel,
     global_,
 ):
+    """
+    Fusionne historique contextuel et global.
+
+    Le contexte récent reçoit davantage de poids.
+    """
+
     contextuel = _normaliser_matchs(
         contextuel
     )
@@ -1258,88 +1785,642 @@ def _fusionner_historiques(
         global_
     )
 
-    if contextuel and global_:
-        # Le contextuel est prioritaire car il représente
-        # davantage le contexte spécifique domicile/extérieur.
-        return (
-            contextuel * 2
-            + global_
+    return (
+        contextuel * 2
+        + global_
+    )
+
+
+# ============================================================
+# EXTRACTION DES BUTS
+# ============================================================
+
+def _extraire_buts(
+    matchs,
+    domicile=True,
+):
+    """
+    Extrait buts pour / contre depuis plusieurs formats.
+    """
+
+    matchs = _normaliser_matchs(
+        matchs
+    )
+
+    pour = []
+    contre = []
+
+    for match in matchs:
+
+        if isinstance(
+            match,
+            dict,
+        ):
+
+            gf = None
+            ga = None
+
+            for key in (
+                "gf",
+                "goals_for",
+                "buts_pour",
+                "goals_scored",
+                "score_for",
+            ):
+
+                if key in match:
+
+                    gf = match[key]
+                    break
+
+            for key in (
+                "ga",
+                "goals_against",
+                "buts_contre",
+                "goals_conceded",
+                "score_against",
+            ):
+
+                if key in match:
+
+                    ga = match[key]
+                    break
+
+            if (
+                gf is not None
+                and ga is not None
+            ):
+
+                pour.append(
+                    _safe_float(gf)
+                )
+
+                contre.append(
+                    _safe_float(ga)
+                )
+
+                continue
+
+            score = match.get(
+                "score"
+            )
+
+            if (
+                isinstance(
+                    score,
+                    str,
+                )
+                and "-"
+                in score
+            ):
+
+                try:
+
+                    a, b = score.split(
+                        "-",
+                        1,
+                    )
+
+                    pour.append(
+                        _safe_float(a)
+                    )
+
+                    contre.append(
+                        _safe_float(b)
+                    )
+
+                except Exception:
+                    pass
+
+        elif isinstance(
+            match,
+            (list, tuple),
+        ):
+
+            if len(match) >= 2:
+
+                pour.append(
+                    _safe_float(
+                        match[0]
+                    )
+                )
+
+                contre.append(
+                    _safe_float(
+                        match[1]
+                    )
+                )
+
+    return (
+        pour,
+        contre,
+    )
+
+
+# ============================================================
+# ESTIMATION LAMBDA
+# ============================================================
+
+def _estimer_lambda_equipe(
+    matchs,
+    moyenne_def_adverse=None,
+    domicile=True,
+):
+    """
+    Estime le potentiel offensif d'une équipe.
+    """
+
+    pour, contre = _extraire_buts(
+        matchs,
+        domicile=domicile,
+    )
+
+    attaque = moy(
+        pour,
+        default=1.20,
+    )
+
+    defense = moy(
+        contre,
+        default=1.20,
+    )
+
+    if moyenne_def_adverse is not None:
+
+        defense = _safe_float(
+            moyenne_def_adverse,
+            default=defense,
         )
 
-    if contextuel:
-        return contextuel
+    lambda_estime = (
+        0.65 * attaque
+        + 0.35 * defense
+    )
 
-    return global_
-
-
-def _selectionner_meilleur_candidat(
-    candidats,
-):
-    valides = [
-        c
-        for c in candidats
-        if c
-        and c.get("passe_filtres")
-    ]
-
-    if not valides:
-        return None
+    if domicile:
+        lambda_estime *= 1.05
 
     return max(
-        valides,
-        key=lambda c: (
-            c.get("ev", -999),
-            c.get("fiabilite", 0),
-            c.get("p", 0),
+        0.15,
+        min(
+            lambda_estime,
+            4.50,
         ),
     )
 
 
-def _construire_cotes_marche(
-    o1,
-    ox,
-    o2,
-    c1,
-    cx,
-    c2,
-):
-    return {
-        "open_1": o1,
-        "open_x": ox,
-        "open_2": o2,
-        "curr_1": c1,
-        "curr_x": cx,
-        "curr_2": c2,
-    }
-
+# ============================================================
+# PROBABILITÉS DE MARCHÉ
+# ============================================================
 
 def _probas_marche(
-    c1,
-    cx,
-    c2,
+    cotes,
 ):
-    return demargeage_proportionnel({
-        "1": c1,
-        "X": cx,
-        "2": c2,
-    })
+    """
+    Transforme les cotes 1X2 en probabilités
+    de marché sans marge.
+    """
+
+    if not isinstance(
+        cotes,
+        dict,
+    ):
+
+        return {
+            "1": 0.0,
+            "X": 0.0,
+            "2": 0.0,
+            "marge": 0.0,
+        }
+
+    return demargeage_proportionnel(
+        cotes.get(
+            "1",
+            0.0,
+        ),
+        cotes.get(
+            "X",
+            0.0,
+        ),
+        cotes.get(
+            "2",
+            0.0,
+        ),
+    )
+
 
 # ============================================================
-# ANALYSE FOOTBALL QFTE V23.0
-# COMPATIBILITE MAIN.PY V23.0
+# CONSTRUCTION DES COTES MARCHÉ
 # ============================================================
 
-def analyser_match_football(
-    home_ctx,
-    home_glob,
-    away_ctx,
-    away_glob,
+def _construire_cotes_marche(
     open_1,
     open_x,
     open_2,
     curr_1,
     curr_x,
     curr_2,
+):
+    """
+    Structure normalisée des cotes.
+    """
+
+    return {
+        "ouverture": {
+            "1": _safe_float(
+                open_1
+            ),
+            "X": _safe_float(
+                open_x
+            ),
+            "2": _safe_float(
+                open_2
+            ),
+        },
+
+        "actuelles": {
+            "1": _safe_float(
+                curr_1
+            ),
+            "X": _safe_float(
+                curr_x
+            ),
+            "2": _safe_float(
+                curr_2
+            ),
+        },
+    }
+
+
+# ============================================================
+# SÉLECTION DU MEILLEUR CANDIDAT
+# ============================================================
+
+def _selectionner_meilleur_candidat(
+    candidats,
+):
+    """
+    Sélection finale selon :
+    - Value éventuelle
+    - EV
+    - fiabilité
+    - probabilité
+    """
+
+    candidats = [
+        candidat
+        for candidat in _safe_list(
+            candidats
+        )
+        if isinstance(
+            candidat,
+            dict,
+        )
+    ]
+
+    if not candidats:
+        return None
+
+    def score(candidat):
+
+        ev = _safe_float(
+            candidat.get(
+                "ev",
+                0.0,
+            )
+        )
+
+        fiabilite = _safe_float(
+            candidat.get(
+                "fiabilite",
+                0.0,
+            )
+        )
+
+        probabilite = _safe_float(
+            candidat.get(
+                "probabilite",
+                candidat.get(
+                    "proba",
+                    0.0,
+                ),
+            )
+        )
+
+        decision = candidat.get(
+            "decision",
+            "",
+        )
+
+        bonus = (
+            0.20
+            if decision == "VALUE"
+            else 0.0
+        )
+
+        return (
+            bonus
+            + 0.40 * ev
+            + 0.35 * fiabilite
+            + 0.25 * probabilite
+        )
+
+    return max(
+        candidats,
+        key=score,
+                )
+
+# ============================================================
+# BLOC 3A/3B
+# ANALYSEUR FOOTBALL — ENTRÉE + CALCUL CENTRAL
+# ============================================================
+
+def _extraire_ligne_et_cotes(
+    structure,
+    default_line=None,
+):
+    resultats = []
+
+    if structure is None:
+        return resultats
+
+    if isinstance(structure, dict):
+
+        if (
+            "ligne" in structure
+            or "line" in structure
+        ):
+            ligne = structure.get(
+                "ligne",
+                structure.get("line", default_line),
+            )
+
+            over = structure.get(
+                "over",
+                structure.get(
+                    "cote_over",
+                    structure.get("odds_over"),
+                ),
+            )
+
+            under = structure.get(
+                "under",
+                structure.get(
+                    "cote_under",
+                    structure.get("odds_under"),
+                ),
+            )
+
+            if ligne is not None:
+                resultats.append({
+                    "ligne": _safe_float(ligne),
+                    "over": _safe_float(over),
+                    "under": _safe_float(under),
+                })
+
+            return resultats
+
+        for cle, valeur in structure.items():
+
+            try:
+                ligne = float(cle)
+            except Exception:
+                continue
+
+            if isinstance(valeur, dict):
+
+                over = valeur.get(
+                    "over",
+                    valeur.get("cote_over"),
+                )
+
+                under = valeur.get(
+                    "under",
+                    valeur.get("cote_under"),
+                )
+
+                resultats.append({
+                    "ligne": ligne,
+                    "over": _safe_float(over),
+                    "under": _safe_float(under),
+                })
+
+        return resultats
+
+    if isinstance(structure, (list, tuple)):
+
+        for item in structure:
+
+            if isinstance(item, dict):
+
+                ligne = item.get(
+                    "ligne",
+                    item.get("line", default_line),
+                )
+
+                if ligne is None:
+                    continue
+
+                resultats.append({
+                    "ligne": _safe_float(ligne),
+                    "over": _safe_float(
+                        item.get(
+                            "over",
+                            item.get("cote_over", 0.0),
+                        )
+                    ),
+                    "under": _safe_float(
+                        item.get(
+                            "under",
+                            item.get("cote_under", 0.0),
+                        )
+                    ),
+                })
+
+            elif isinstance(item, (list, tuple)):
+
+                if len(item) >= 3:
+                    resultats.append({
+                        "ligne": _safe_float(item[0]),
+                        "over": _safe_float(item[1]),
+                        "under": _safe_float(item[2]),
+                    })
+
+    return resultats
+
+
+def _construire_ou_resultats(
+    lambda_total,
+    ou_lignes,
+):
+    marches = _extraire_ligne_et_cotes(
+        ou_lignes
+    )
+
+    if not marches:
+        marches = [
+            {
+                "ligne": 2.5,
+                "over": 0.0,
+                "under": 0.0,
+            }
+        ]
+
+    resultats = []
+
+    for marche in marches:
+
+        ligne = marche.get(
+            "ligne",
+            2.5,
+        )
+
+        probabilites = calcul_ou_poisson(
+            lambda_total,
+            ligne,
+        )
+
+        candidats = []
+
+        cote_over = _safe_float(
+            marche.get("over", 0.0)
+        )
+
+        cote_under = _safe_float(
+            marche.get("under", 0.0)
+        )
+
+        if cote_over > 1.0:
+
+            candidat_over = eval_candidat_simple(
+                marche="Over/Under",
+                selection=f"Over {ligne}",
+                probabilite=probabilites["p_over"],
+                cote=cote_over,
+                ligne=ligne,
+                direction="over",
+            )
+
+            candidats.append(
+                candidat_over
+            )
+
+        if cote_under > 1.0:
+
+            candidat_under = eval_candidat_simple(
+                marche="Over/Under",
+                selection=f"Under {ligne}",
+                probabilite=probabilites["p_under"],
+                cote=cote_under,
+                ligne=ligne,
+                direction="under",
+            )
+
+            candidats.append(
+                candidat_under
+            )
+
+        resultats.append({
+            "ligne": ligne,
+            "p_over": probabilites["p_over"],
+            "p_under": probabilites["p_under"],
+            "p_push": probabilites["p_push"],
+            "cote_over": cote_over,
+            "cote_under": cote_under,
+            "candidats": candidats,
+            "distribution": probabilites.get(
+                "distribution",
+                [],
+            ),
+        })
+
+    return resultats
+
+
+def _normaliser_candidats(
+    candidats,
+    forensics=None,
+    stacking=None,
+    cross_market=None,
+):
+    resultats = []
+
+    for candidat in _safe_list(candidats):
+
+        if not isinstance(candidat, dict):
+            continue
+
+        candidat = appliquer_filtres_discipline(
+            candidat
+        )
+
+        if candidat is None:
+            continue
+
+        candidat = appliquer_forensics_au_candidat(
+            candidat,
+            forensics,
+        )
+
+        candidat = appliquer_stacking_au_candidat(
+            candidat,
+            stacking,
+        )
+
+        candidat = appliquer_consistency_au_candidat(
+            candidat,
+            cross_market,
+        )
+
+        candidat = appliquer_filtres_discipline(
+            candidat
+        )
+
+        if candidat is not None:
+            resultats.append(candidat)
+
+    return resultats
+
+
+def _appel_module(
+    fonction,
+    *args,
+    default=None,
+    **kwargs,
+):
+    if fonction is None:
+        return default
+
+    try:
+        return fonction(
+            *args,
+            **kwargs,
+        )
+
+    except TypeError:
+
+        try:
+            return fonction(
+                *args,
+            )
+        except Exception:
+            return default
+
+    except Exception:
+        return default
+
+
+def analyser_match_football(
+    home_ctx,
+    home_glob,
+    away_ctx,
+    away_glob,
+    cote_1,
+    cote_x,
+    cote_2,
+    cote_1_ouverture,
+    cote_x_ouverture,
+    cote_2_ouverture,
     meteo="normale",
     enjeu="normal",
     blessures_dom=False,
@@ -1352,184 +2433,130 @@ def analyser_match_football(
     pos_dom=None,
     pos_ext=None,
     total_equipes=None,
-    parametre_23=None,
-    parametre_24=None,
-    ligue="autre",
+    reserve_1=None,
+    reserve_2=None,
+    ligue=None,
 ):
-    """
-    Interface historique attendue par main.py.
 
-    Les 25 arguments sont conserves pour compatibilite.
-    Le moteur interne QFTE V23.0 travaille ensuite sur
-    des structures normalisees.
-    """
+    home_ctx = _normaliser_matchs(
+        home_ctx
+    )
 
-    h2h = _normaliser_matchs(h2h)
-    hcp_lignes = hcp_lignes or []
-    ou_lignes = ou_lignes or []
+    home_glob = _normaliser_matchs(
+        home_glob
+    )
 
-    home_ctx = _normaliser_matchs(home_ctx)
-    home_glob = _normaliser_matchs(home_glob)
-    away_ctx = _normaliser_matchs(away_ctx)
-    away_glob = _normaliser_matchs(away_glob)
+    away_ctx = _normaliser_matchs(
+        away_ctx
+    )
 
-    matchs_dom = _fusionner_historiques(
+    away_glob = _normaliser_matchs(
+        away_glob
+    )
+
+    h2h = _normaliser_matchs(
+        h2h
+    )
+
+    home_matches = _fusionner_historiques(
         home_ctx,
         home_glob,
     )
 
-    matchs_ext = _fusionner_historiques(
+    away_matches = _fusionner_historiques(
         away_ctx,
         away_glob,
     )
 
-    contexte = {
-        "meteo": meteo,
-        "enjeu": enjeu,
-        "ligue": ligue,
-        "pos_dom": pos_dom,
-        "pos_ext": pos_ext,
-        "total_equipes": total_equipes,
-    }
-
-    cotes = _construire_cotes_marche(
-        open_1,
-        open_x,
-        open_2,
-        curr_1,
-        curr_x,
-        curr_2,
+    lambda_home = _estimer_lambda_equipe(
+        home_matches,
+        domicile=True,
     )
 
-    # ========================================================
-    # 1. ESTIMATION BRUTE DES LAMBDA
-    # ========================================================
-
-    bp_dom = moy([
-        m.get("bp")
-        for m in matchs_dom
-    ])
-
-    bc_dom = moy([
-        m.get("bc")
-        for m in matchs_dom
-    ])
-
-    bp_ext = moy([
-        m.get("bp")
-        for m in matchs_ext
-    ])
-
-    bc_ext = moy([
-        m.get("bc")
-        for m in matchs_ext
-    ])
-
-    lh_brut = (
-        bp_dom + bc_ext
-    ) / 2.0
-
-    la_brut = (
-        bp_ext + bc_dom
-    ) / 2.0
-
-    # ========================================================
-    # 2. CLASSEMENT
-    # ========================================================
-
-    f_dom_classement, f_ext_classement = (
-        facteur_classement(
-            pos_dom,
-            pos_ext,
-            total_equipes,
-        )
+    lambda_away = _estimer_lambda_equipe(
+        away_matches,
+        domicile=False,
     )
 
-    lh_brut *= f_dom_classement
-    la_brut *= f_ext_classement
+    facteur_home = 1.0
+    facteur_away = 1.0
 
-    # ========================================================
-    # 3. FORME RECENTE
-    # ========================================================
-
-    lh_brut *= facteur_forme_recente(
-        matchs_dom
+    facteur_home *= facteur_meteo(
+        meteo
     )
 
-    la_brut *= facteur_forme_recente(
-        matchs_ext
+    facteur_away *= facteur_meteo(
+        meteo
     )
 
-    # ========================================================
-    # 4. H2H
-    # ========================================================
-
-    f_h2h_dom, f_h2h_ext = (
-        facteur_h2h(h2h)
+    facteur_home *= facteur_enjeu(
+        enjeu
     )
 
-    lh_brut *= f_h2h_dom
-    la_brut *= f_h2h_ext
+    facteur_away *= facteur_enjeu(
+        enjeu
+    )
 
-    # ========================================================
-    # 5. BLESSURES / FATIGUE
-    # ========================================================
-
-    lh_brut *= facteur_blessures(
+    facteur_home *= facteur_blessures(
         blessures_dom
     )
 
-    la_brut *= facteur_blessures(
+    facteur_away *= facteur_blessures(
         blessures_ext
     )
 
-    lh_brut *= facteur_fatigue(
+    facteur_home *= facteur_fatigue(
         fatigue_dom
     )
 
-    la_brut *= facteur_fatigue(
+    facteur_away *= facteur_fatigue(
         fatigue_ext
     )
 
-    # ========================================================
-    # 6. METEO / ENJEU
-    # ========================================================
-
-    lh_brut *= facteur_meteo(
-        meteo
+    facteur_home *= facteur_classement(
+        pos_dom,
+        pos_ext,
+        total_equipes,
     )
 
-    la_brut *= facteur_meteo(
-        meteo
+    facteur_away *= facteur_classement(
+        pos_ext,
+        pos_dom,
+        total_equipes,
     )
 
-    lh_brut *= facteur_enjeu(
-        enjeu
+    facteur_home *= facteur_forme_recente(
+        home_matches,
+        domicile=True,
     )
 
-    la_brut *= facteur_enjeu(
-        enjeu
+    facteur_away *= facteur_forme_recente(
+        away_matches,
+        domicile=False,
     )
 
-    # ========================================================
-    # 7. STRUCTURE MI-TEMPS
-    # ========================================================
-
-    f_ht = facteur_ht(
-        matchs_dom + matchs_ext
+    facteur_h2h_value = facteur_h2h(
+        h2h
     )
 
-    lh_brut *= f_ht
-    la_brut *= f_ht
+    facteur_home *= facteur_h2h_value
+
+    facteur_away /= max(
+        facteur_h2h_value,
+        0.90,
+    )
+
+    lambda_home *= facteur_home
+    lambda_away *= facteur_away
 
     lambda_home = max(
-        lh_brut,
-        0.05,
+        0.15,
+        min(lambda_home, 4.50),
     )
 
     lambda_away = max(
-        la_brut,
-        0.05,
+        0.15,
+        min(lambda_away, 4.50),
     )
 
     lambda_total = (
@@ -1537,584 +2564,367 @@ def analyser_match_football(
         + lambda_away
     )
 
-    # ========================================================
-    # 8. MATRICE DE SCORES
-    # ========================================================
+    ratio_ht = compute_ratio_ht(
+        lambda_total
+    )
 
-    matrix = compute_score_matrix(
+    lambda_home_ht = (
+        lambda_home
+        * ratio_ht
+    )
+
+    lambda_away_ht = (
+        lambda_away
+        * ratio_ht
+    )
+
+    lambda_home_2h = max(
+        0.0,
+        lambda_home - lambda_home_ht,
+    )
+
+    lambda_away_2h = max(
+        0.0,
+        lambda_away - lambda_away_ht,
+    )
+
+    matrice = compute_score_matrix(
         lambda_home,
         lambda_away,
+        max_goals=8,
     )
 
     p1, px, p2 = compute_1x2(
-        matrix
+        matrice
     )
 
-    # ========================================================
-    # 9. MARCHE 1X2
-    # ========================================================
-
-    probas_marche = _probas_marche(
-        curr_1,
-        curr_x,
-        curr_2,
-    )
-
-    candidats = []
-
-    c = eval_candidat_simple(
-        "Victoire domicile",
-        p1,
-        curr_1,
-        "1X2",
-    )
-
-    if c:
-        candidats.append(c)
-
-    c = eval_candidat_simple(
-        "Match nul",
-        px,
-        curr_x,
-        "1X2",
-    )
-
-    if c:
-        candidats.append(c)
-
-    c = eval_candidat_simple(
-        "Victoire exterieur",
-        p2,
-        curr_2,
-        "1X2",
-    )
-
-    if c:
-        candidats.append(c)
-
-    # ========================================================
-    # 10. MARKET FORENSICS
-    # ========================================================
-
-    market_forensics = {}
-
-    try:
-        market_forensics = analyser_market_forensics(
-            {
-                "1": open_1,
-                "X": open_x,
-                "2": open_2,
-            },
-            {
-                "1": curr_1,
-                "X": curr_x,
-                "2": curr_2,
-            },
-        )
-    except Exception:
-        market_forensics = {
-            "disponible": False,
-            "erreur": "Forensics indisponible",
-        }
-
-    # ========================================================
-    # 11. META-ENSEMBLE / STACKING
-    # ========================================================
-
-    meta_ensemble = {}
-
-    try:
-        meta_ensemble = analyser_meta_ensemble(
-            lambda_home,
-            lambda_away,
-            p1,
-            px,
-            p2,
-            matchs_dom,
-            matchs_ext,
-        )
-    except Exception:
-        try:
-            meta_ensemble = analyser_meta_ensemble(
-                p1,
-                px,
-                p2,
-            )
-        except Exception:
-            meta_ensemble = {
-                "disponible": False,
-                "erreur": "Meta-ensemble indisponible",
-            }
-
-    # ========================================================
-    # 12. CROSS-MARKET
-    # ========================================================
-
-    cross_market = {}
-
-    try:
-        cross_market = analyser_cross_market(
-            p1,
-            px,
-            p2,
-            lambda_total,
-        )
-    except Exception:
-        cross_market = {
-            "disponible": False,
-            "erreur": "Cross-market indisponible",
-        }
-
-    # ========================================================
-    # 13. REGIME
-    # ========================================================
-
-    regime = {}
-
-    try:
-        regime = analyser_regime(
-            matchs_dom,
-            matchs_ext,
-            lambda_total,
-        )
-    except Exception:
-        try:
-            regime = analyser_regime(
-                matchs_dom,
-                matchs_ext,
-            )
-        except Exception:
-            regime = {
-                "disponible": False,
-                "erreur": "Regime indisponible",
-            }
-
-    # ========================================================
-    # 14. TIME DECAY
-    # ========================================================
-
-    time_decay = {}
-
-    try:
-        moy_dom_pond = extraire_moyennes_ponderees(
-            matchs_dom
-        )
-
-        moy_ext_pond = extraire_moyennes_ponderees(
-            matchs_ext
-        )
-
-        time_decay = {
-            "dom": moy_dom_pond,
-            "ext": moy_ext_pond,
-        }
-    except Exception:
-        time_decay = {
-            "disponible": False,
-        }
-
-    # ========================================================
-    # 15. SIGNATURE FOOT
-    # ========================================================
-
-    signature_foot = {}
-
-    try:
-        signature_foot = analyser_signature_foot(
-            matchs_dom,
-            matchs_ext,
-            contexte,
-        )
-    except Exception:
-        signature_foot = {
-            "disponible": False,
-        }
-
-    # ========================================================
-    # 16. AJUSTEMENTS DES CANDIDATS
-    # ========================================================
-
-    for candidat in candidats:
-
-        if market_forensics.get(
-            "disponible",
-            False,
-        ):
-            try:
-                appliquer_forensics_au_candidat(
-                    candidat,
-                    market_forensics,
-                )
-            except Exception:
-                pass
-
-        if meta_ensemble.get(
-            "disponible",
-            False,
-        ):
-            try:
-                appliquer_stacking_au_candidat(
-                    candidat,
-                    meta_ensemble,
-                )
-            except Exception:
-                pass
-
-        if cross_market.get(
-            "disponible",
-            False,
-        ):
-            try:
-                appliquer_consistency_au_candidat(
-                    candidat,
-                    cross_market,
-                )
-            except Exception:
-                pass
-
-    # ========================================================
-    # 17. HANDICAP
-    # ========================================================
-
-    handicap_resultats = []
-
-    for h in hcp_lignes:
-        if not isinstance(h, dict):
-            continue
-
-        hcp_dom = h.get("hcp_dom")
-        hcp_ext = h.get("hcp_ext")
-        cote_dom = h.get("cote_dom")
-        cote_ext = h.get("cote_ext")
-
-        if hcp_dom is None:
-            continue
-
-        try:
-            resultat_h = calcul_handicap_complet(
-                matrix,
-                cote_dom,
-                cote_ext,
-                float(hcp_dom),
-            )
-
-            resultat_h["hcp_ext"] = hcp_ext
-
-            handicap_resultats.append(
-                resultat_h
-            )
-
-        except Exception:
-            continue
-
-    # ========================================================
-    # 18. OVER / UNDER
-    # ========================================================
-
-    ou_resultats = []
-
-    for ligne_data in ou_lignes:
-
-        if not isinstance(
-            ligne_data,
-            dict,
-        ):
-            continue
-
-        ligne = ligne_data.get("ligne")
-        cote_over = ligne_data.get("cote_over")
-        cote_under = ligne_data.get("cote_under")
-
-        if ligne is None:
-            continue
-
-        try:
-            resultat_ou = (
-                calcul_ou_complet_from_signature(
-                    matchs_dom,
-                    matchs_ext,
-                    cote_over,
-                    cote_under,
-                    float(ligne),
-                    contexte,
-                )
-            )
-
-            ou_resultats.append(
-                resultat_ou
-            )
-
-        except Exception:
-
-            ou_calc = calcul_ou_poisson(
-                lambda_total,
-                float(ligne),
-            )
-
-            candidats_ou = []
-
-            if cote_over and cote_over > 0:
-                candidats_ou.append(
-                    eval_candidat_simple(
-                        "Over " + str(ligne),
-                        ou_calc["p_over"],
-                        cote_over,
-                        "Over/Under",
-                    )
-                )
-
-            if cote_under and cote_under > 0:
-                candidats_ou.append(
-                    eval_candidat_simple(
-                        "Under " + str(ligne),
-                        ou_calc["p_under"],
-                        cote_under,
-                        "Over/Under",
-                    )
-                )
-
-            ou_resultats.append({
-                "ligne": ligne,
-                "p_over": round(
-                    ou_calc["p_over"],
-                    4,
-                ),
-                "p_under": round(
-                    ou_calc["p_under"],
-                    4,
-                ),
-                "candidats": [
-                    c
-                    for c in candidats_ou
-                    if c is not None
-                ],
-            })
-
-    # ============================================================
-    # 3B — MI-TEMPS / 2e MI-TEMPS / SÉLECTION FINALE / OUTPUT
-    # ============================================================
-
-    # ============================================================
-# Ratio HT / 2e période
-# ============================================================
-lambda_total = lambda_home + lambda_away
-
-# Compatible avec les différentes signatures de compute_ratio_ht()
-try:
-    ratio_ht = compute_ratio_ht(lambda_total)
-except TypeError:
-    ratio_ht = compute_ratio_ht(
-        lambda_home,
-        lambda_away,
-    )    
-
-    lambda_total = lambda_home + lambda_away
-
-    lambda_ht = max(
-        0.05,
-        lambda_total * ratio_ht,
-    )
-
-    lambda_2h = max(
-        0.05,
-        lambda_total - lambda_ht,
-    )
-
-    # ------------------------------------------------------------
-    # Matrices HT et 2H
-    # ------------------------------------------------------------
     matrice_ht = compute_score_matrix(
-        lambda_ht * (
-            lambda_home / max(lambda_total, 1e-9)
-        ),
-        lambda_ht * (
-            lambda_away / max(lambda_total, 1e-9)
-        ),
+        lambda_home_ht,
+        lambda_away_ht,
+        max_goals=7,
+    )
+
+    p1_ht, px_ht, p2_ht = compute_1x2(
+        matrice_ht
     )
 
     matrice_2h = compute_score_matrix(
-        lambda_2h * (
-            lambda_home / max(lambda_total, 1e-9)
-        ),
-        lambda_2h * (
-            lambda_away / max(lambda_total, 1e-9)
-        ),
+        lambda_home_2h,
+        lambda_away_2h,
+        max_goals=7,
     )
 
-    p1_ht, px_ht, p2_ht = compute_1x2(matrice_ht)
-    p1_2h, px_2h, p2_2h = compute_1x2(matrice_2h)
+    p1_2h, px_2h, p2_2h = compute_1x2(
+        matrice_2h
+    )
 
-    # ------------------------------------------------------------
-    # Marchés mi-temps / 2e mi-temps
-    #
-    # main.py V23 attend notamment :
-    #   p1_ht / px_ht / p2_ht
-    #   p1_2h / px_2h / p2_2h
-    #   ht
-    #   2h
-    #
-    # Aucune cote HT/2H n'est actuellement transmise par main.py
-    # dans l'appel football. On conserve donc les probabilités
-    # calculées sans inventer de prix.
-    # ------------------------------------------------------------
-    marches_2mt = {
-        "p1_ht": round(p1_ht, 4),
-        "px_ht": round(px_ht, 4),
-        "p2_ht": round(p2_ht, 4),
-
-        "p1_2h": round(p1_2h, 4),
-        "px_2h": round(px_2h, 4),
-        "p2_2h": round(p2_2h, 4),
-
-        "lambda_ht": round(lambda_ht, 4),
-        "lambda_2h": round(lambda_2h, 4),
-
-        "ht": [],
-        "2h": [],
+    cotes_actuelles = {
+        "1": _safe_float(cote_1),
+        "X": _safe_float(cote_x),
+        "2": _safe_float(cote_2),
     }
 
-    # ------------------------------------------------------------
-    # OU sécurité
-    # ------------------------------------------------------------
-    ou_securite = None
+    cotes_ouverture = {
+        "1": _safe_float(cote_1_ouverture),
+        "X": _safe_float(cote_x_ouverture),
+        "2": _safe_float(cote_2_ouverture),
+    }
 
-    if ou_resultats:
-        tous_ou = []
+    marche_actuel = demargeage_proportionnel(
+        cote_1,
+        cote_x,
+        cote_2,
+    )
 
-        for bloc_ou in ou_resultats:
-            for candidat in bloc_ou.get("candidats", []):
-                if candidat is None:
-                    continue
+    marche_ouverture = demargeage_proportionnel(
+        cote_1_ouverture,
+        cote_x_ouverture,
+        cote_2_ouverture,
+    )
 
-                candidat = dict(candidat)
+    candidats_1x2 = [
+        _construire_candidat_1x2(
+            "1",
+            p1,
+            cote_1,
+        ),
+        _construire_candidat_1x2(
+            "X",
+            px,
+            cote_x,
+        ),
+        _construire_candidat_1x2(
+            "2",
+            p2,
+            cote_2,
+        ),
+    ]
 
-                if "fiabilite" not in candidat:
-                    candidat["fiabilite"] = compute_reliability(
-                        candidat.get("probabilite", 0.0),
-                        candidat.get("cote", 0.0),
-                    )
+    divergences = detecter_divergences(
+        p1,
+        px,
+        p2,
+        {
+            "1": marche_actuel.get(
+                "1",
+                0.0,
+            ),
+            "X": marche_actuel.get(
+                "X",
+                0.0,
+            ),
+            "2": marche_actuel.get(
+                "2",
+                0.0,
+            ),
+        },
+    )
 
-                tous_ou.append(candidat)
+    regime = _appel_module(
+        analyser_regime,
+        home_matches,
+        away_matches,
+        default={
+            "regime": "normal",
+            "fiabilite": 0.50,
+        },
+    )
 
-        if tous_ou:
-            ou_securite = max(
-                tous_ou,
-                key=lambda x: (
-                    x.get("fiabilite", 0.0),
-                    x.get("ev", 0.0),
-                    x.get("probabilite", 0.0),
+    signature = _appel_module(
+        analyser_signature_foot,
+        home_ctx,
+        home_glob,
+        away_ctx,
+        away_glob,
+        default={
+            "score": 0.50,
+            "classification": "neutre",
+        },
+    )
+
+    forensics = _appel_module(
+        analyser_market_forensics,
+        cotes_actuelles,
+        cotes_ouverture,
+        {
+            "1": p1,
+            "X": px,
+            "2": p2,
+        },
+        default={
+            "fiabilite": 0.50,
+            "alertes": [],
+        },
+    )
+
+    stacking = _appel_module(
+        analyser_meta_ensemble,
+        {
+            "p1": p1,
+            "px": px,
+            "p2": p2,
+            "lambda_home": lambda_home,
+            "lambda_away": lambda_away,
+            "regime": regime,
+            "signature": signature,
+        },
+        default={
+            "fiabilite": 0.50,
+            "score": 0.50,
+        },
+    )
+
+    cross_market = _appel_module(
+        analyser_cross_market,
+        {
+            "p1": p1,
+            "px": px,
+            "p2": p2,
+            "lambda_total": lambda_total,
+        },
+        default={
+            "consistency": 0.50,
+            "alertes": [],
+        },
+    )
+
+    candidats_1x2 = _normaliser_candidats(
+        candidats_1x2,
+        forensics=forensics,
+        stacking=stacking,
+        cross_market=cross_market,
+    )
+
+    meilleur_1x2 = _selectionner_meilleur_candidat(
+        candidats_1x2
+    )
+
+    handicap_resultats = []
+
+    lignes_hcp = _safe_list(
+        hcp_lignes
+    )
+
+    for ligne in lignes_hcp:
+
+        if isinstance(ligne, dict):
+
+            ligne_dom = ligne.get(
+                "dom",
+                ligne.get(
+                    "home",
+                    ligne.get(
+                        "ligne",
+                        0.0,
+                    ),
                 ),
             )
 
-    # ------------------------------------------------------------
-    # Agrégation de TOUS les candidats
-    # ------------------------------------------------------------
+            ligne_ext = ligne.get(
+                "ext",
+                ligne.get(
+                    "away",
+                    None,
+                ),
+            )
+
+            cote_dom = ligne.get(
+                "cote_dom",
+                ligne.get(
+                    "home_odds",
+                ),
+            )
+
+            cote_ext = ligne.get(
+                "cote_ext",
+                ligne.get(
+                    "away_odds",
+                ),
+            )
+
+        elif isinstance(ligne, (list, tuple)):
+
+            ligne_dom = (
+                ligne[0]
+                if len(ligne) >= 1
+                else 0.0
+            )
+
+            ligne_ext = (
+                ligne[1]
+                if len(ligne) >= 2
+                else None
+            )
+
+            cote_dom = (
+                ligne[2]
+                if len(ligne) >= 3
+                else None
+            )
+
+            cote_ext = (
+                ligne[3]
+                if len(ligne) >= 4
+                else None
+            )
+
+        else:
+
+            ligne_dom = ligne
+            ligne_ext = None
+            cote_dom = None
+            cote_ext = None
+
+        handicap_resultats.append(
+            calcul_handicap_complet(
+                matrice,
+                ligne_dom,
+                ligne_ext,
+                cote_dom,
+                cote_ext,
+            )
+        )
+
+    ou_resultats = _construire_ou_resultats(
+        lambda_total,
+        ou_lignes,
+    )
+
+    marches_2mt = calcul_marches_2mt(
+        p1_ht,
+        px_ht,
+        p2_ht,
+        p1_2h,
+        px_2h,
+        p2_2h,
+        cotes_ht=None,
+        cotes_2h=None,
+)
+
+# ============================================================
+# BLOC 3B/3B
+# ANALYSEUR FOOTBALL — FINALISATION + COMPATIBILITÉ V23
+# ============================================================
+
     tous_candidats = []
 
-    tous_candidats.extend(candidats)
+    tous_candidats.extend(
+        candidats_1x2
+    )
 
-    for bloc_hcp in handicap_resultats:
-        for candidat in bloc_hcp.get("candidats", []):
-            if candidat is not None:
-                tous_candidats.append(candidat)
+    for resultat_hcp in handicap_resultats:
 
-    for bloc_ou in ou_resultats:
-        for candidat in bloc_ou.get("candidats", []):
-            if candidat is not None:
-                tous_candidats.append(candidat)
-
-    if ou_securite is not None:
-        # Évite une duplication inutile
-        identite_ou = (
-            ou_securite.get("marche"),
-            ou_securite.get("ligne"),
-            ou_securite.get("direction"),
-        )
-
-        deja_present = any(
-            (
-                c.get("marche"),
-                c.get("ligne"),
-                c.get("direction"),
-            ) == identite_ou
-            for c in tous_candidats
-        )
-
-        if not deja_present:
-            tous_candidats.append(ou_securite)
-
-    # ------------------------------------------------------------
-    # Nettoyage / sécurité des candidats
-    # ------------------------------------------------------------
-    candidats_valides = []
-
-    for candidat in tous_candidats:
-        if not isinstance(candidat, dict):
+        if not isinstance(resultat_hcp, dict):
             continue
 
-        candidat = dict(candidat)
-
-        probabilite = float(
-            candidat.get(
-                "probabilite",
-                candidat.get("proba", 0.0),
-            ) or 0.0
+        tous_candidats.extend(
+            _safe_list(
+                resultat_hcp.get(
+                    "candidats",
+                    [],
+                )
+            )
         )
 
-        cote = float(
-            candidat.get("cote", 0.0) or 0.0
+    for resultat_ou in ou_resultats:
+
+        if not isinstance(resultat_ou, dict):
+            continue
+
+        candidats_ou = resultat_ou.get(
+            "candidats",
+            [],
         )
 
-        ev = float(
-            candidat.get("ev", 0.0) or 0.0
+        candidats_ou = _normaliser_candidats(
+            candidats_ou,
+            forensics=forensics,
+            stacking=stacking,
+            cross_market=cross_market,
         )
 
-        fiabilite = float(
-            candidat.get("fiabilite", 0.0) or 0.0
+        resultat_ou["candidats"] = candidats_ou
+
+        tous_candidats.extend(
+            candidats_ou
         )
 
-        candidat["probabilite"] = probabilite
-        candidat["cote"] = cote
-        candidat["ev"] = ev
-        candidat["fiabilite"] = fiabilite
-
-        # Alias utile pour les anciennes parties de l'application
-        candidat["proba"] = probabilite
-
-        candidats_valides.append(candidat)
-
-    # ------------------------------------------------------------
-    # Tri QFTE
-    # ------------------------------------------------------------
-    candidats_valides.sort(
-        key=lambda x: (
-            x.get("decision", "") == "VALUE",
-            x.get("ev", 0.0),
-            x.get("fiabilite", 0.0),
-            x.get("probabilite", 0.0),
-        ),
-        reverse=True,
+    tous_candidats = _normaliser_candidats(
+        tous_candidats,
+        forensics=forensics,
+        stacking=stacking,
+        cross_market=cross_market,
     )
 
-    # ------------------------------------------------------------
-    # Meilleur candidat
-    # ------------------------------------------------------------
-    meilleur = _selectionner_meilleur_candidat(
-        candidats_valides
+    meilleur_candidat = _selectionner_meilleur_candidat(
+        tous_candidats
     )
 
-    if meilleur is None and candidats_valides:
-        meilleur = candidats_valides[0]
+    if meilleur_candidat is None:
 
-    # ------------------------------------------------------------
-    # Décision finale
-    # ------------------------------------------------------------
-    if meilleur is not None:
-        pari_retenu = dict(meilleur)
-    else:
         pari_retenu = {
-            "marche": "NO BET",
-            "selection": "Aucune sélection",
+            "marche": "Aucun",
+            "selection": "NO BET",
             "probabilite": 0.0,
             "proba": 0.0,
             "cote": 0.0,
@@ -2124,207 +2934,436 @@ except TypeError:
             "decision": "NO BET",
         }
 
-    # ------------------------------------------------------------
-    # Divergences / diagnostic
-    # ------------------------------------------------------------
-    try:
-        divergences = detecter_divergences(
-            p1,
-            px,
-            p2,
-            probabilites_marche,
+    else:
+
+        pari_retenu = dict(
+            meilleur_candidat
         )
-    except Exception:
-        divergences = []
 
-    # ------------------------------------------------------------
-    # Diagnostic final
-    # ------------------------------------------------------------
+    # --------------------------------------------------------
+    # OU SÉCURITÉ
+    # --------------------------------------------------------
+
+    ou_securite = []
+
+    for resultat in ou_resultats:
+
+        if not isinstance(resultat, dict):
+            continue
+
+        ligne = resultat.get(
+            "ligne"
+        )
+
+        p_over = _safe_float(
+            resultat.get(
+                "p_over",
+                0.0,
+            )
+        )
+
+        p_under = _safe_float(
+            resultat.get(
+                "p_under",
+                0.0,
+            )
+        )
+
+        if p_under >= 0.70:
+
+            ou_securite.append({
+                "marche": "Under",
+                "selection": f"Under {ligne}",
+                "ligne": ligne,
+                "probabilite": round(
+                    p_under,
+                    4,
+                ),
+                "fiabilite": round(
+                    compute_reliability(
+                        p_under,
+                        resultat.get(
+                            "cote_under",
+                            0.0,
+                        ),
+                    ),
+                    4,
+                ),
+            })
+
+        if p_over >= 0.70:
+
+            ou_securite.append({
+                "marche": "Over",
+                "selection": f"Over {ligne}",
+                "ligne": ligne,
+                "probabilite": round(
+                    p_over,
+                    4,
+                ),
+                "fiabilite": round(
+                    compute_reliability(
+                        p_over,
+                        resultat.get(
+                            "cote_over",
+                            0.0,
+                        ),
+                    ),
+                    4,
+                ),
+            })
+
+    # --------------------------------------------------------
+    # DIAGNOSTIC
+    # --------------------------------------------------------
+
+    regime_nom = "normal"
+
+    if isinstance(regime, dict):
+
+        regime_nom = regime.get(
+            "regime",
+            regime.get(
+                "classification",
+                "normal",
+            ),
+        )
+
+    fiabilite_regime = 0.50
+
+    if isinstance(regime, dict):
+
+        fiabilite_regime = _clamp(
+            regime.get(
+                "fiabilite",
+                regime.get(
+                    "confidence",
+                    0.50,
+                ),
+            )
+        )
+
+    fiabilite_forensics = 0.50
+
+    if isinstance(forensics, dict):
+
+        fiabilite_forensics = _clamp(
+            forensics.get(
+                "fiabilite",
+                forensics.get(
+                    "reliability",
+                    0.50,
+                ),
+            )
+        )
+
+    fiabilite_stacking = 0.50
+
+    if isinstance(stacking, dict):
+
+        fiabilite_stacking = _clamp(
+            stacking.get(
+                "fiabilite",
+                stacking.get(
+                    "reliability",
+                    stacking.get(
+                        "score",
+                        0.50,
+                    ),
+                ),
+            )
+        )
+
+    consistency = 0.50
+
+    if isinstance(cross_market, dict):
+
+        consistency = _clamp(
+            cross_market.get(
+                "consistency",
+                cross_market.get(
+                    "score",
+                    0.50,
+                ),
+            )
+        )
+
     diagnostic = {
-        "lambda_home": round(lambda_home, 4),
-        "lambda_away": round(lambda_away, 4),
-        "lambda_total": round(lambda_total, 4),
+        "ligue": ligue,
+        "regime": regime_nom,
+        "fiabilite_regime": round(
+            fiabilite_regime,
+            4,
+        ),
+        "fiabilite_forensics": round(
+            fiabilite_forensics,
+            4,
+        ),
+        "fiabilite_stacking": round(
+            fiabilite_stacking,
+            4,
+        ),
+        "cross_market_consistency": round(
+            consistency,
+            4,
+        ),
+        "divergences_marche": divergences,
+        "lambda_home": round(
+            lambda_home,
+            4,
+        ),
+        "lambda_away": round(
+            lambda_away,
+            4,
+        ),
+        "lambda_total": round(
+            lambda_total,
+            4,
+        ),
+        "ratio_ht": round(
+            ratio_ht,
+            4,
+        ),
+        "nb_candidats": len(
+            tous_candidats
+        ),
+    }
 
-        "lambda_ht": round(lambda_ht, 4),
-        "lambda_2h": round(lambda_2h, 4),
+    # --------------------------------------------------------
+    # STRUCTURE MODERNE V23
+    # --------------------------------------------------------
 
-        "p1": round(p1, 4),
-        "px": round(px, 4),
-        "p2": round(p2, 4),
+    probabilites_1x2 = {
+        "1": round(
+            p1,
+            4,
+        ),
+        "X": round(
+            px,
+            4,
+        ),
+        "2": round(
+            p2,
+            4,
+        ),
+    }
 
-        "p1_ht": round(p1_ht, 4),
-        "px_ht": round(px_ht, 4),
-        "p2_ht": round(p2_ht, 4),
+    marches = {
+        "1X2": candidats_1x2,
+        "handicap": handicap_resultats,
+        "over_under": ou_resultats,
+    }
 
-        "p1_2h": round(p1_2h, 4),
-        "px_2h": round(px_2h, 4),
-        "p2_2h": round(p2_2h, 4),
+    meta_ensemble = stacking
 
-        "ratio_ht": round(ratio_ht, 4),
+    market_forensics = forensics
 
-        "nombre_candidats": len(candidats_valides),
+    signature_foot = signature
+
+    resultat = {
+        # ----------------------------------------------------
+        # IDENTIFICATION
+        # ----------------------------------------------------
+
+        "ligue": ligue,
+
+        # ----------------------------------------------------
+        # PROBABILITÉS
+        # ----------------------------------------------------
+
+        "probabilites_1x2": probabilites_1x2,
+
+        "p1": round(
+            p1,
+            4,
+        ),
+
+        "px": round(
+            px,
+            4,
+        ),
+
+        "p2": round(
+            p2,
+            4,
+        ),
+
+        # ----------------------------------------------------
+        # LAMBDAS
+        # ----------------------------------------------------
+
+        "lambda_home": round(
+            lambda_home,
+            4,
+        ),
+
+        "lambda_away": round(
+            lambda_away,
+            4,
+        ),
+
+        "lambda_total": round(
+            lambda_total,
+            4,
+        ),
+
+        "lambda_home_ht": round(
+            lambda_home_ht,
+            4,
+        ),
+
+        "lambda_away_ht": round(
+            lambda_away_ht,
+            4,
+        ),
+
+        "lambda_home_2h": round(
+            lambda_home_2h,
+            4,
+        ),
+
+        "lambda_away_2h": round(
+            lambda_away_2h,
+            4,
+        ),
+
+        "ratio_ht": round(
+            ratio_ht,
+            4,
+        ),
+
+        # ----------------------------------------------------
+        # MARCHÉS MODERNES
+        # ----------------------------------------------------
+
+        "marches": marches,
+
+        "meilleurs_candidats": tous_candidats,
+
+        "signature_foot": signature_foot,
+
+        "market_forensics": market_forensics,
+
+        "meta_ensemble": meta_ensemble,
+
+        "cross_market": cross_market,
+
+        "regime": regime,
+
+        "diagnostic": diagnostic,
+
+        # ----------------------------------------------------
+        # DONNÉES MARCHÉ
+        # ----------------------------------------------------
+
+        "marche_actuel": marche_actuel,
+
+        "marche_ouverture": marche_ouverture,
+
+        "cotes_actuelles": cotes_actuelles,
+
+        "cotes_ouverture": cotes_ouverture,
 
         "divergences": divergences,
 
-        "meteo": meteo,
-        "enjeu": enjeu,
-        "ligue": ligue,
+        # ----------------------------------------------------
+        # CHOIX FINAL
+        # ----------------------------------------------------
 
-        "position_dom": pos_dom,
-        "position_ext": pos_ext,
-    }
+        "meilleur_candidat": meilleur_candidat,
 
-    # ------------------------------------------------------------
-    # Signature / forensics / stacking / cross-market
-    # ------------------------------------------------------------
-    # Les variables ont été calculées plus haut dans 3A.
-    # On sécurise ici leur présence afin que bloc_visuel()
-    # ne provoque jamais de KeyError.
-    if not isinstance(signature_foot, dict):
-        signature_foot = {}
-
-    if not isinstance(market_forensics, dict):
-        market_forensics = {}
-
-    if not isinstance(meta_ensemble, dict):
-        meta_ensemble = {}
-
-    if not isinstance(cross_market, dict):
-        cross_market = {}
-
-    if not isinstance(regime, dict):
-        regime = {}
-
-    if not isinstance(time_decay, dict):
-        time_decay = {}
-
-    # ------------------------------------------------------------
-    # Construction du résultat principal
-    # ------------------------------------------------------------
-    resultat = {
-        # ========================================================
-        # Compatibilité historique / main.py V23
-        # ========================================================
         "pari_retenu": pari_retenu,
 
-        "lambda_home": round(lambda_home, 4),
-        "lambda_away": round(lambda_away, 4),
+        "decision": pari_retenu.get(
+            "decision",
+            "NO BET",
+        ),
 
-        "p1": round(p1, 4),
-        "px": round(px, 4),
-        "p2": round(p2, 4),
+        # ----------------------------------------------------
+        # MARCHÉS FOOTBALL
+        # ----------------------------------------------------
 
-        "candidats": candidats_valides,
+        "candidats": candidats_1x2,
 
         "handicap_resultats": handicap_resultats,
 
         "ou_resultats": ou_resultats,
 
-        "marches_2mt": marches_2mt,
-
         "ou_securite": ou_securite,
 
-        # ========================================================
-        # Structure moderne QFTE
-        # ========================================================
-        "probabilites_1x2": {
-            "1": round(p1, 4),
-            "X": round(px, 4),
-            "2": round(p2, 4),
-        },
+        "marches_2mt": marches_2mt,
 
-        "marches": {
-            "1x2": {
-                "p1": round(p1, 4),
-                "px": round(px, 4),
-                "p2": round(p2, 4),
-            },
-            "handicap": handicap_resultats,
-            "ou": ou_resultats,
-            "mi_temps": marches_2mt,
-        },
+        # ----------------------------------------------------
+        # MATRICES / DISTRIBUTIONS
+        # ----------------------------------------------------
 
-        "meilleurs_candidats": candidats_valides[:10],
-
-        # ========================================================
-        # Modules V23
-        # ========================================================
-        "signature_foot": signature_foot,
-        "market_forensics": market_forensics,
-        "meta_ensemble": meta_ensemble,
-        "cross_market": cross_market,
-        "regime": regime,
-        "time_decay": time_decay,
-
-        "diagnostic": diagnostic,
-
-        # ========================================================
-        # Alias utilisés par bloc_visuel()
-        # ========================================================
-        "forensics": market_forensics,
-        "stacking": meta_ensemble,
-        "signature": signature_foot,
-
-        # ========================================================
-        # Données marché
-        # ========================================================
-        "cotes": cotes_marche,
-        "probabilites_marche": probabilites_marche,
-
-        # ========================================================
-        # Données contexte
-        # ========================================================
-        "contexte": {
-            "meteo": meteo,
-            "enjeu": enjeu,
-            "ligue": ligue,
-            "position_dom": pos_dom,
-            "position_ext": pos_ext,
-            "total_equipes": total_equipes,
-        },
-
-        # ========================================================
-        # Données modèle
-        # ========================================================
         "matrice_score": matrice,
+
         "matrice_ht": matrice_ht,
+
         "matrice_2h": matrice_2h,
 
-        "lambda": {
-            "home": round(lambda_home, 4),
-            "away": round(lambda_away, 4),
-            "total": round(lambda_total, 4),
-            "ht": round(lambda_ht, 4),
-            "2h": round(lambda_2h, 4),
-        },
+        # ----------------------------------------------------
+        # PROBABILITÉS HT / 2H
+        # ----------------------------------------------------
 
-        # ========================================================
-        # Audit
-        # ========================================================
-        "divergences": divergences,
+        "p1_ht": round(
+            p1_ht,
+            4,
+        ),
 
-        "meta": {
-            "version": "QFTE V23.0",
-            "sport": "football",
-            "interface": "main.py V23.0",
-        },
+        "px_ht": round(
+            px_ht,
+            4,
+        ),
+
+        "p2_ht": round(
+            p2_ht,
+            4,
+        ),
+
+        "p1_2h": round(
+            p1_2h,
+            4,
+        ),
+
+        "px_2h": round(
+            px_2h,
+            4,
+        ),
+
+        "p2_2h": round(
+            p2_2h,
+            4,
+        ),
+
+        # ----------------------------------------------------
+        # ALIASES COMPATIBILITÉ MAIN.PY V23
+        # ----------------------------------------------------
+
+        "forensics": market_forensics,
+
+        "stacking": meta_ensemble,
+
+        "signature": signature_foot,
     }
 
-    # ------------------------------------------------------------
-    # Dernière sécurisation : aucun candidat None dans les listes
-    # ------------------------------------------------------------
-    resultat["candidats"] = [
-        c for c in resultat["candidats"]
-        if isinstance(c, dict)
-    ]
+    # --------------------------------------------------------
+    # ALIAS DE COMPATIBILITÉ SUPPLÉMENTAIRES
+    # --------------------------------------------------------
 
-    resultat["meilleurs_candidats"] = [
-        c
-        for c in resultat["meilleurs_candidats"]
-        if isinstance(c, dict)
-    ]
+    resultat["probabilites"] = probabilites_1x2
 
-    # ------------------------------------------------------------
-    # Retour
-    # ------------------------------------------------------------
+    resultat["1x2"] = candidats_1x2
+
+    resultat["handicap"] = handicap_resultats
+
+    resultat["over_under"] = ou_resultats
+
+    resultat["ou"] = ou_resultats
+
+    resultat["meilleur"] = meilleur_candidat
+
+    resultat["regime_nom"] = regime_nom
+
     return resultat
