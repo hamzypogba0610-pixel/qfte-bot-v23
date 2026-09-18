@@ -1894,13 +1894,19 @@ def analyser_match_football(
     # 3B — MI-TEMPS / 2e MI-TEMPS / SÉLECTION FINALE / OUTPUT
     # ============================================================
 
-    # ------------------------------------------------------------
-    # Ratio HT / 2e période
-    # ------------------------------------------------------------
+    # ============================================================
+# Ratio HT / 2e période
+# ============================================================
+lambda_total = lambda_home + lambda_away
+
+# Compatible avec les différentes signatures de compute_ratio_ht()
+try:
+    ratio_ht = compute_ratio_ht(lambda_total)
+except TypeError:
     ratio_ht = compute_ratio_ht(
         lambda_home,
         lambda_away,
-    )
+    )    
 
     lambda_total = lambda_home + lambda_away
 
