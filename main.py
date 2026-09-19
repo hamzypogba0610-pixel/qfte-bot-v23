@@ -417,9 +417,7 @@ if sport == "football":
 
     html += '<p style="margin-top:20px;"><a href="/football" style="color:#ffcc00;">Retour</a></p>'
     html += '</body></html>'
-    return HTMLResponse(content=html)
-
-
+    
     else:
         ml_ft = parse_ml(form.get("ml_ft", ""))
         ml_1h = parse_ml(form.get("ml_1h", ""))
@@ -537,8 +535,7 @@ if sport == "football":
 
         html += '<p style="margin-top:20px;"><a href="/basketball" style="color:#ffcc00;">Retour</a></p>'
         html += '</body></html>'
-        return HTMLResponse(content=html)
-
+        
 
 @app.get("/historique", response_class=HTMLResponse)
 async def historique(request: Request):
