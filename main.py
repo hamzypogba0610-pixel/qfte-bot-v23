@@ -13,8 +13,8 @@ templates = Jinja2Templates(directory="templates")
 # -----------------------------
 # Fonctions utilitaires
 # -----------------------------
-# >>> parse_matchs, parse_hcp, parse_ou, parse_ml, parse_total_mt, parse_quart, ff, fi, bloc_candidat <<<
-# (Ton code utilitaire complet ici, placé AVANT les routes)
+# >>> Toutes tes fonctions parse_matchs, parse_hcp, parse_ou, parse_ml, parse_total_mt, parse_quart, ff, fi, bloc_candidat <<<
+# (placées ici, au début du fichier, sans indentation parasite)
 
 # -----------------------------
 # Bloc visuel
@@ -58,7 +58,6 @@ async def _analyser_interne(request: Request):
 
     sport = form.get("sport", "football")
     ligue = form.get("ligue", "autre")
-    competition = form.get("competition", "")
     eq_dom = form.get("equipe_domicile", "")
     eq_ext = form.get("equipe_exterieur", "")
 
