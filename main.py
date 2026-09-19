@@ -2,7 +2,7 @@ import json
 import re
 from datetime import datetime
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from qfte_engine.mvp import analyser_match_football
 from qfte_engine.basket import analyser_match_basket
@@ -13,13 +13,13 @@ templates = Jinja2Templates(directory="templates")
 # -----------------------------
 # Fonctions utilitaires
 # -----------------------------
-# (parse_matchs, parse_hcp, parse_ou, parse_ml, parse_total_mt, parse_quart, ff, fi, bloc_candidat)
-# >>> Ton code utilitaire inchangé ici <<<
+# >>> parse_matchs, parse_hcp, parse_ou, parse_ml, parse_total_mt, parse_quart, ff, fi, bloc_candidat <<<
+# (Ton code utilitaire complet ici, placé AVANT les routes)
 
 # -----------------------------
 # Bloc visuel
 # -----------------------------
-# >>> Ton code bloc_visuel inchangé ici <<<
+# >>> Ton bloc_visuel complet ici <<<
 
 # -----------------------------
 # Routes principales
@@ -82,13 +82,44 @@ async def _analyser_interne(request: Request):
     te = fi(form, "total_equipes")
 
     if sport == "football":
-        # >>> Bloc football inchangé (ton code partie 3) <<<
-        ...
+        # >>> Ton bloc football complet (partie 3) <<<
+        r = analyser_match_football(
+            home_ctx, home_glob, away_ctx, away_glob,
+            o1, ox, o2, c1, cx, c2,
+            "normale", "normal",
+            False, False, False, False,
+            h2h, hcp_lignes, ou_lignes,
+            pd, pe, te,
+            None, None,
+            ligue
+        )
+        # >>> Construction HTML football (inchangée) <<<
         return HTMLResponse(content=html)
 
     else:
-        # >>> Bloc basketball inchangé (ton code partie 4) <<<
-        ...
+        # >>> Ton bloc basketball complet (partie 4) <<<
+        ml_ft = parse_ml(form.get("ml_ft", ""))
+        ml_1h = parse_ml(form.get("ml_1h", ""))
+        ml_2h = parse_ml(form.get("ml_2h", ""))
+        total_1h = parse_total_mt(form.get("total_1h", ""))
+        total_2h = parse_total_mt(form.get("total_2h", ""))
+        q1 = parse_quart(form.get("q1", ""))
+        q2 = parse_quart(form.get("q2", ""))
+        q3 = parse_quart(form.get("q3", ""))
+        q4 = parse_quart(form.get("q4", ""))
+
+        r = analyser_match_basket(
+            home_ctx, home_glob, away_ctx, away_glob,
+            h2h, hcp_lignes, ou_lignes,
+            False, False, False, False, pd, pe, te,
+            ml_ft, ml_1h, ml_2h, total_1h, total_2h,
+            ligue,
+            None, None, None,
+            None, None, None,
+            q1, q2, q3, q4,
+            o1, o2, c1, c2
+        )
+        # >>> Construction HTML basket (inchangée) <<<
         return HTMLResponse(content=html)
 
 # -----------------------------
@@ -96,5 +127,5 @@ async def _analyser_interne(request: Request):
 # -----------------------------
 @app.get("/historique", response_class=HTMLResponse)
 async def historique(request: Request):
-    # >>> Ton code historique inchangé (partie 4) <<<
+    # >>> Ton bloc historique complet (partie 4) <<<
     return HTMLResponse(content=h)
