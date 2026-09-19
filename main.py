@@ -1,20 +1,18 @@
 import json
-import re
 from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from qfte_engine.mvp import analyser_match_football
 from qfte_engine.basket import analyser_match_basket
+# ✅ Import des utilitaires depuis utils.py
+from qfte_engine.utils import (
+    parse_matchs, parse_hcp, parse_ou, parse_ml,
+    parse_total_mt, parse_quart, ff, fi, bloc_candidat
+)
 
 app = FastAPI(title="QFTE Bot V23.0")
 templates = Jinja2Templates(directory="templates")
-
-# -----------------------------
-# Fonctions utilitaires
-# -----------------------------
-# >>> Toutes tes fonctions parse_matchs, parse_hcp, parse_ou, parse_ml, parse_total_mt, parse_quart, ff, fi, bloc_candidat <<<
-# (placées ici, au début du fichier, sans indentation parasite)
 
 # -----------------------------
 # Bloc visuel
@@ -81,7 +79,6 @@ async def _analyser_interne(request: Request):
     te = fi(form, "total_equipes")
 
     if sport == "football":
-        # >>> Ton bloc football complet (partie 3) <<<
         r = analyser_match_football(
             home_ctx, home_glob, away_ctx, away_glob,
             o1, ox, o2, c1, cx, c2,
@@ -92,11 +89,10 @@ async def _analyser_interne(request: Request):
             None, None,
             ligue
         )
-        # >>> Construction HTML football (inchangée) <<<
+        # >>> Construction HTML football (partie 3) <<<
         return HTMLResponse(content=html)
 
     else:
-        # >>> Ton bloc basketball complet (partie 4) <<<
         ml_ft = parse_ml(form.get("ml_ft", ""))
         ml_1h = parse_ml(form.get("ml_1h", ""))
         ml_2h = parse_ml(form.get("ml_2h", ""))
@@ -118,7 +114,7 @@ async def _analyser_interne(request: Request):
             q1, q2, q3, q4,
             o1, o2, c1, c2
         )
-        # >>> Construction HTML basket (inchangée) <<<
+        # >>> Construction HTML basket (partie 4) <<<
         return HTMLResponse(content=html)
 
 # -----------------------------
