@@ -271,16 +271,6 @@ async def health():
 
 @app.post("/analyser", response_class=HTMLResponse)
 async def analyser(request: Request):
-    try:
-        return await _analyser_interne(request)
-    except Exception as e:
-        import traceback
-        err = traceback.format_exc()
-        err = err.replace("<", "&lt;").replace(">", "&gt;")
-        return HTMLResponse(content="<pre style='background:#000;color:#4ade80;padding:20px;font-size:12px;white-space:pre-wrap;'>ERREUR :\n\n" + err + "</pre>")
-
-
-async def _analyser_interne(request: Request):
     form = await request.form()
 
     sport = form.get("sport", "football")
@@ -308,116 +298,105 @@ async def _analyser_interne(request: Request):
     pe = fi(form, "pos_ext")
     te = fi(form, "total_equipes")
 
+    if sport == "football":
+        r = analyser_match_football(
+            home_ctx, home_glob, away_ctx, away_glob,
+            o1, ox, o2, c1, cx, c2,
+            "normale", "normal",
+            False, False, False, False,
+            h2h, hcp_lignes, ou_lignes,
+            pd, pe, te,
+            None, None,
+            ligue
+        )
 
-if sport == "football":
-    r = analyser_match_football(
-        home_ctx, home_glob, away_ctx, away_glob,
-        o1, ox, o2, c1, cx, c2,
-        "normale", "normal",
-        False, False, False, False,
-        h2h, hcp_lignes, ou_lignes,
-        pd, pe, te,
-        None, None,
-        ligue
-    )
+        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+        html += '<h1 style="color:#ffcc00;">Analyse Football</h1>'
+        html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
 
-    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
-    html += '<h1 style="color:#ffcc00;">Analyse Football</h1>'
-    html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
-
-    p = r.get("pari_retenu")
-    if p:
-        html += '<div style="border:2px solid #4ade80;background:#0a1a0a;padding:12px;border-radius:8px;margin-top:12px;">'
-        html += '<h2 style="color:#4ade80;margin-top:0;">PARI RETENU</h2>'
-        html += '<p><b>Marche :</b> ' + str(p.get("marche", "?")) + '</p>'
-        html += '<p><b>Selection :</b> ' + str(p.get("selection", "?")) + '</p>'
-        html += '<p><b>Cote :</b> ' + str(p.get("cote", 0)) + '</p>'
-        html += '<p><b>Probabilite :</b> ' + str(round(float(p.get("p", p.get("probabilite", 0))) * 100, 2)) + '%</p>'
-        html += '<p><b>EV :</b> ' + str(round(float(p.get("ev", 0)) * 100, 2)) + '%</p>'
-        html += '<p><b>Fiabilite :</b> ' + str(p.get("fiabilite", 0)) + '</p>'
-        html += '<p><b>Niveau :</b> ' + str(p.get("niveau", "N/A")) + '</p>'
-        html += '<p><b>Decision :</b> ' + str(p.get("decision", "NO BET")) + '</p>'
-        if p.get("stake_origine"):
-            html += '<p><b>Stake origine :</b> ' + str(p.get("stake_origine", 0)) + '%</p>'
-        html += '<p><b>Stake final :</b> ' + str(p.get("stake", 0)) + '% bankroll</p>'
-        html += '</div>'
-    else:
-        html += '<div style="border:2px solid #ef4444;background:#1a0a0a;padding:12px;border-radius:8px;margin-top:12px;">'
-        html += '<h2 style="color:#ef4444;margin-top:0;">AUCUN PARI RETENU</h2>'
-        html += '<p>Aucune selection ne respecte les filtres V23.0.</p>'
-        html += '</div>'
-
-    html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
-    html += '<h2 style="color:#ffcc00;margin-top:0;">Buts attendus (lambda)</h2>'
-    html += '<p>' + eq_dom + ' : ' + str(r.get("lambda_home", 0)) + '</p>'
-    html += '<p>' + eq_ext + ' : ' + str(r.get("lambda_away", 0)) + '</p>'
-    html += '</div>'
-
-    html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
-    html += '<h2 style="color:#ffcc00;margin-top:0;">Probabilites 1X2</h2>'
-    html += '<p>P(1) : ' + str(round(float(r.get("p1", 0)) * 100, 2)) + '%</p>'
-    html += '<p>P(X) : ' + str(round(float(r.get("px", 0)) * 100, 2)) + '%</p>'
-    html += '<p>P(2) : ' + str(round(float(r.get("p2", 0)) * 100, 2)) + '%</p>'
-    html += '</div>'
-
-    html += bloc_visuel(r, "football")
-
-    if r.get("ou_securite"):
-        s = r["ou_securite"]
-        if isinstance(s, list) and s:
-            s = s[0]
-        if isinstance(s, dict):
-            html += '<div style="border:2px solid #60a5fa;background:#0a1020;padding:12px;border-radius:8px;margin-top:12px;">'
-            html += '<h2 style="color:#60a5fa;margin-top:0;">SECURITE O/U</h2>'
-            html += '<p><b>Marche :</b> ' + str(s.get("marche", s.get("type_ou", "?"))) + ' ' + str(s.get("ligne", "?")) + '</p>'
-            html += '<p><b>Cote :</b> ' + str(s.get("cote", 0)) + '</p>'
-            html += '<p><b>P(effective) :</b> ' + str(round(float(s.get("p", s.get("probabilite", 0))) * 100, 2)) + '%</p>'
-            html += '<p><b>EV :</b> ' + str(round(float(s.get("ev", 0)) * 100, 2)) + '%</p>'
-            html += '<p><b>Fiabilite :</b> ' + str(s.get("fiabilite", 0)) + '</p>'
+        p = r.get("pari_retenu")
+        if p:
+            html += '<div style="border:2px solid #4ade80;background:#0a1a0a;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#4ade80;margin-top:0;">PARI RETENU</h2>'
+            html += '<p><b>Marche :</b> ' + p.get("marche", "?") + '</p>'
+            html += '<p><b>Selection :</b> ' + p["selection"] + '</p>'
+            html += '<p><b>Cote :</b> ' + str(p["cote"]) + '</p>'
+            html += '<p><b>Probabilite :</b> ' + str(round(p["p"] * 100, 2)) + '%</p>'
+            html += '<p><b>EV :</b> ' + str(round(p["ev"] * 100, 2)) + '%</p>'
+            html += '<p><b>Fiabilite :</b> ' + str(p["fiabilite"]) + '</p>'
+            html += '<p><b>Niveau :</b> ' + p["niveau"] + '</p>'
+            html += '<p><b>Decision :</b> ' + p["decision"] + '</p>'
+            if p.get("stake_origine"):
+                html += '<p><b>Stake origine :</b> ' + str(p["stake_origine"]) + '%</p>'
+            html += '<p><b>Stake final :</b> ' + str(p["stake"]) + '% bankroll</p>'
+            html += '</div>'
+        else:
+            html += '<div style="border:2px solid #ef4444;background:#1a0a0a;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#ef4444;margin-top:0;">AUCUN PARI RETENU</h2>'
+            html += '<p>Aucune selection ne respecte les filtres V23.0.</p>'
             html += '</div>'
 
-    html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 1X2</h2>'
-    for c in r.get("candidats", []):
-        html += bloc_candidat(c)
+        html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
+        html += '<h2 style="color:#ffcc00;margin-top:0;">Buts attendus (lambda)</h2>'
+        html += '<p>' + eq_dom + ' : ' + str(r["lambda_home"]) + '</p>'
+        html += '<p>' + eq_ext + ' : ' + str(r["lambda_away"]) + '</p>'
+        html += '</div>'
 
-    html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Handicap</h2>'
-    if r.get("handicap_resultats"):
-        for h in r["handicap_resultats"]:
-            if isinstance(h, dict) and "candidats" in h:
-                for c in h.get("candidats", []):
-                    html += bloc_candidat(c)
-            else:
+        html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
+        html += '<h2 style="color:#ffcc00;margin-top:0;">Probabilites 1X2</h2>'
+        html += '<p>P(1) : ' + str(round(r["p1"] * 100, 2)) + '%</p>'
+        html += '<p>P(X) : ' + str(round(r["px"] * 100, 2)) + '%</p>'
+        html += '<p>P(2) : ' + str(round(r["p2"] * 100, 2)) + '%</p>'
+        html += '</div>'
+
+        html += bloc_visuel(r, "football")
+
+        if r.get("ou_securite"):
+            s = r["ou_securite"]
+            html += '<div style="border:2px solid #60a5fa;background:#0a1020;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#60a5fa;margin-top:0;">🛡️ SECURITE O/U</h2>'
+            html += '<p><b>Marche :</b> ' + s.get("type_ou", "?") + ' ' + str(s.get("ligne", "?")) + '</p>'
+            html += '<p><b>Cote :</b> ' + str(s["cote"]) + '</p>'
+            html += '<p><b>P(effective) :</b> ' + str(round(s["p"] * 100, 2)) + '%</p>'
+            html += '<p><b>EV :</b> ' + str(round(s["ev"] * 100, 2)) + '%</p>'
+            html += '<p><b>Fiabilite :</b> ' + str(s["fiabilite"]) + '</p>'
+            html += '</div>'
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 1X2</h2>'
+        for c in r["candidats"]:
+            html += bloc_candidat(c)
+
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Handicap</h2>'
+        if r["handicap_resultats"]:
+            for h in r["handicap_resultats"]:
                 html += bloc_candidat(h)
-    else:
-        html += '<p style="color:#666;">Aucun handicap saisi.</p>'
+        else:
+            html += '<p style="color:#666;">Aucun handicap saisi.</p>'
 
-    html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Over / Under</h2>'
-    if r.get("ou_resultats"):
-        for o in r["ou_resultats"]:
-            if isinstance(o, dict) and "candidats" in o:
-                for c in o.get("candidats", []):
-                    html += bloc_candidat(c)
-            else:
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Over / Under</h2>'
+        if r["ou_resultats"]:
+            for o in r["ou_resultats"]:
                 html += bloc_candidat(o)
-    else:
-        html += '<p style="color:#666;">Aucun O/U saisi.</p>'
+        else:
+            html += '<p style="color:#666;">Aucun O/U saisi.</p>'
 
-    html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 2 Mi-temps</h2>'
-    m2 = r.get("marches_2mt", {})
-    if m2.get("ht"):
-        html += '<p><b>P 1 / X / 2 HT :</b> ' + str(round(float(m2.get("p1_ht", 0)) * 100, 1)) + '% / ' + str(round(float(m2.get("px_ht", 0)) * 100, 1)) + '% / ' + str(round(float(m2.get("p2_ht", 0)) * 100, 1)) + '%</p>'
-        for c in m2.get("ht", []):
-            html += bloc_candidat(c)
-    if m2.get("2h"):
-        html += '<p><b>P 1 / X / 2 2H :</b> ' + str(round(float(m2.get("p1_2h", 0)) * 100, 1)) + '% / ' + str(round(float(m2.get("px_2h", 0)) * 100, 1)) + '% / ' + str(round(float(m2.get("p2_2h", 0)) * 100, 1)) + '%</p>'
-        for c in m2.get("2h", []):
-            html += bloc_candidat(c)
-    if not m2.get("ht") and not m2.get("2h"):
-        html += '<p style="color:#666;">Aucune cote 2 mi-temps saisie.</p>'
+        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 2 Mi-temps</h2>'
+        m2 = r["marches_2mt"]
+        if m2.get("ht"):
+            html += '<p><b>P 1 / X / 2 HT :</b> ' + str(round(m2["p1_ht"] * 100, 1)) + '% / ' + str(round(m2["px_ht"] * 100, 1)) + '% / ' + str(round(m2["p2_ht"] * 100, 1)) + '%</p>'
+            for c in m2["ht"]:
+                html += bloc_candidat(c)
+        if m2.get("2h"):
+            html += '<p><b>P 1 / X / 2 2H :</b> ' + str(round(m2["p1_2h"] * 100, 1)) + '% / ' + str(round(m2["px_2h"] * 100, 1)) + '% / ' + str(round(m2["p2_2h"] * 100, 1)) + '%</p>'
+            for c in m2["2h"]:
+                html += bloc_candidat(c)
+        if not m2.get("ht") and not m2.get("2h"):
+            html += '<p style="color:#666;">Aucune cote 2 mi-temps saisie.</p>'
 
-    html += '<p style="margin-top:20px;"><a href="/football" style="color:#ffcc00;">Retour</a></p>'
-    html += '</body></html>'
-    
+        html += '<p style="margin-top:20px;"><a href="/football" style="color:#ffcc00;">Retour</a></p>'
+        html += '</body></html>'
+        return HTMLResponse(content=html)
+
     else:
         ml_ft = parse_ml(form.get("ml_ft", ""))
         ml_1h = parse_ml(form.get("ml_1h", ""))
@@ -449,17 +428,17 @@ if sport == "football":
         if p:
             html += '<div style="border:2px solid #4ade80;background:#0a1a0a;padding:12px;border-radius:8px;margin-top:12px;">'
             html += '<h2 style="color:#4ade80;margin-top:0;">PARI RETENU</h2>'
-            html += '<p><b>Marche :</b> ' + str(p.get("marche", "?")) + '</p>'
-            html += '<p><b>Selection :</b> ' + str(p.get("selection", "?")) + '</p>'
-            html += '<p><b>Cote :</b> ' + str(p.get("cote", 0)) + '</p>'
-            html += '<p><b>Probabilite :</b> ' + str(round(float(p.get("p", p.get("probabilite", 0))) * 100, 2)) + '%</p>'
-            html += '<p><b>EV :</b> ' + str(round(float(p.get("ev", 0)) * 100, 2)) + '%</p>'
-            html += '<p><b>Fiabilite :</b> ' + str(p.get("fiabilite", 0)) + '</p>'
-            html += '<p><b>Niveau :</b> ' + str(p.get("niveau", "N/A")) + '</p>'
-            html += '<p><b>Decision :</b> ' + str(p.get("decision", "NO BET")) + '</p>'
+            html += '<p><b>Marche :</b> ' + p.get("marche", "?") + '</p>'
+            html += '<p><b>Selection :</b> ' + p["selection"] + '</p>'
+            html += '<p><b>Cote :</b> ' + str(p["cote"]) + '</p>'
+            html += '<p><b>Probabilite :</b> ' + str(round(p["p"] * 100, 2)) + '%</p>'
+            html += '<p><b>EV :</b> ' + str(round(p["ev"] * 100, 2)) + '%</p>'
+            html += '<p><b>Fiabilite :</b> ' + str(p["fiabilite"]) + '</p>'
+            html += '<p><b>Niveau :</b> ' + p["niveau"] + '</p>'
+            html += '<p><b>Decision :</b> ' + p["decision"] + '</p>'
             if p.get("stake_origine"):
-                html += '<p><b>Stake origine :</b> ' + str(p.get("stake_origine", 0)) + '%</p>'
-            html += '<p><b>Stake final :</b> ' + str(p.get("stake", 0)) + '% bankroll</p>'
+                html += '<p><b>Stake origine :</b> ' + str(p["stake_origine"]) + '%</p>'
+            html += '<p><b>Stake final :</b> ' + str(p["stake"]) + '% bankroll</p>'
             html += '</div>'
         else:
             html += '<div style="border:2px solid #ef4444;background:#1a0a0a;padding:12px;border-radius:8px;margin-top:12px;">'
@@ -469,112 +448,71 @@ if sport == "football":
 
         html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
         html += '<h2 style="color:#ffcc00;margin-top:0;">Points attendus (mu)</h2>'
-        html += '<p>' + eq_dom + ' : ' + str(r.get("mu_home", 0)) + '</p>'
-        html += '<p>' + eq_ext + ' : ' + str(r.get("mu_away", 0)) + '</p>'
-        html += '<p>Total FT : ' + str(r.get("mu_total", 0)) + '</p>'
-        html += '<p>Total 1H : ' + str(r.get("mu_total_1h", 0)) + '</p>'
-        html += '<p>Total 2H : ' + str(r.get("mu_total_2h", 0)) + '</p>'
+        html += '<p>' + eq_dom + ' : ' + str(r["mu_home"]) + '</p>'
+        html += '<p>' + eq_ext + ' : ' + str(r["mu_away"]) + '</p>'
+        html += '<p>Total FT : ' + str(r["mu_total"]) + '</p>'
+        html += '<p>Total 1H : ' + str(r["mu_total_1h"]) + '</p>'
+        html += '<p>Total 2H : ' + str(r["mu_total_2h"]) + '</p>'
         html += '</div>'
 
         html += bloc_visuel(r, "basketball")
 
         html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Moneyline</h2>'
-        if r.get("ml_candidats"):
+        if r["ml_candidats"]:
             for c in r["ml_candidats"]:
                 html += bloc_candidat(c)
         else:
             html += '<p style="color:#666;">Aucune cote ML saisie.</p>'
 
         html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Spread</h2>'
-        if r.get("spread_candidats"):
+        if r["spread_candidats"]:
             for c in r["spread_candidats"]:
                 html += bloc_candidat(c)
         else:
             html += '<p style="color:#666;">Aucun spread saisi.</p>'
 
         html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Total Points FT</h2>'
-        if r.get("total_ft_candidats"):
+        if r["total_ft_candidats"]:
             for c in r["total_ft_candidats"]:
                 html += bloc_candidat(c)
         else:
             html += '<p style="color:#666;">Aucun total FT saisi.</p>'
 
         html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 1ere Mi-temps (1H)</h2>'
-        if r.get("ml_1h_candidats"):
+        if r["ml_1h_candidats"]:
             for c in r["ml_1h_candidats"]:
                 html += bloc_candidat(c)
-        if r.get("total_1h_candidats"):
+        if r["total_1h_candidats"]:
             for c in r["total_1h_candidats"]:
                 html += bloc_candidat(c)
-        if not r.get("ml_1h_candidats") and not r.get("total_1h_candidats"):
+        if not r["ml_1h_candidats"] and not r["total_1h_candidats"]:
             html += '<p style="color:#666;">Aucune cote 1H saisie.</p>'
 
         html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - 2eme Mi-temps (2H)</h2>'
-        if r.get("ml_2h_candidats"):
+        if r["ml_2h_candidats"]:
             for c in r["ml_2h_candidats"]:
                 html += bloc_candidat(c)
-        if r.get("total_2h_candidats"):
+        if r["total_2h_candidats"]:
             for c in r["total_2h_candidats"]:
                 html += bloc_candidat(c)
-        if not r.get("ml_2h_candidats") and not r.get("total_2h_candidats"):
+        if not r["ml_2h_candidats"] and not r["total_2h_candidats"]:
             html += '<p style="color:#666;">Aucune cote 2H saisie.</p>'
 
         for nom_q in ["Q1", "Q2", "Q3", "Q4"]:
-            qd = r.get("quarts", {}).get(nom_q, {})
+            qd = r["quarts"][nom_q]
             html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - ' + nom_q + '</h2>'
             if qd.get("mu"):
                 html += '<p><b>Mu total ' + nom_q + ' :</b> ' + str(qd["mu"]) + '</p>'
-            if qd.get("total"):
+            if qd["total"]:
                 for c in qd["total"]:
                     html += bloc_candidat(c)
-            if qd.get("ml"):
+            if qd["ml"]:
                 for c in qd["ml"]:
                     html += bloc_candidat(c)
-            if not qd.get("total") and not qd.get("ml"):
+            if not qd["total"] and not qd["ml"]:
                 html += '<p style="color:#666;">Aucune cote ' + nom_q + ' saisie.</p>'
 
         html += '<p style="margin-top:20px;"><a href="/basketball" style="color:#ffcc00;">Retour</a></p>'
         html += '</body></html>'
+        return HTMLResponse(content=html)        
         
-
-            return HTMLResponse(content=html)
-
-
-@app.get("/historique", response_class=HTMLResponse)
-async def historique(request: Request):
-    h = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Historique QFTE</title><style>'
-    h += 'body{font-family:Arial;background:#0f0f1a;color:#eee;padding:20px;}'
-    h += 'h1{color:#ffcc00;}a{color:#ffcc00;text-decoration:none;}'
-    h += '.box{background:#14141f;border:1px solid #262636;border-radius:8px;padding:12px;margin-bottom:10px;}'
-    h += '.btn{display:inline-block;padding:10px 14px;background:#ffcc00;color:#000;border:none;border-radius:6px;font-weight:bold;cursor:pointer;margin:4px;text-decoration:none;}'
-    h += '.btn-danger{background:#ef4444;color:#fff;}'
-    h += '</style></head><body>'
-    h += '<h1>Historique QFTE V23.0</h1>'
-    h += '<div style="text-align:center;margin-bottom:16px;">'
-    h += '<a href="/" class="btn">Accueil</a> '
-    h += '<button class="btn" onclick="exporter()">Exporter JSON</button> '
-    h += '<button class="btn btn-danger" onclick="vider()">Vider</button>'
-    h += '</div>'
-    h += '<div id="compteur" style="text-align:center;color:#999;font-size:13px;margin-bottom:16px;"></div>'
-    h += '<div id="liste"></div>'
-    h += '<script>'
-    h += 'function charger(){let h=[];try{h=JSON.parse(localStorage.getItem("qfte_analyses")||"[]");}catch(e){}return h;}'
-    h += 'function afficher(){const hist=charger();const liste=document.getElementById("liste");const c=document.getElementById("compteur");'
-    h += 'if(hist.length===0){c.textContent="";liste.innerHTML="<p style=\\"text-align:center;color:#666;\\">Aucune analyse sauvegardee.</p>";return;}'
-    h += 'c.textContent=hist.length+" analyse(s)";let html="";'
-    h += 'hist.forEach((a,i)=>{const r=a.resultats||{};const p=r.pari_retenu;'
-    h += 'let resume="Aucun pari retenu";'
-    h += 'if(p){resume=(p.selection||"?")+" @ "+(p.cote||"?")+" (EV "+((p.ev||0)*100).toFixed(2)+"%)";}'
-    h += 'html+="<div class=box>";'
-    h += 'html+="<p><b>#"+(i+1)+" - "+(a.date_analyse||"")+"</b></p>";'
-    h += 'html+="<p>"+(a.equipe_domicile||"")+" vs "+(a.equipe_exterieur||"")+" ("+(a.sport||"")+")</p>";'
-    h += 'html+="<p>"+resume+"</p>";'
-    h += 'html+="</div>";});liste.innerHTML=html;}'
-    h += 'function exporter(){const hist=charger();if(hist.length===0){alert("Rien a exporter.");return;}'
-    h += 'const blob=new Blob([JSON.stringify(hist,null,2)],{type:"application/json"});'
-    h += 'const url=URL.createObjectURL(blob);const a=document.createElement("a");'
-    h += 'a.href=url;a.download="qfte_historique_"+new Date().toISOString().slice(0,10)+".json";'
-    h += 'document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}'
-    h += 'function vider(){if(!confirm("Vider tout l historique ?"))return;localStorage.removeItem("qfte_analyses");afficher();}'
-    h += 'afficher();</script></body></html>'
-    return HTMLResponse(content=h)
