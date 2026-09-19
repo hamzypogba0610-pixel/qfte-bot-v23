@@ -148,6 +148,7 @@ def bloc_candidat(c):
         s = "+" if c["ajustement_forensics"] > 0 else ""
         col = "#4ade80" if c["ajustement_forensics"] > 0 else "#ef4444"
         out += '<p><b>Ajust. Forensics :</b> <span style="color:' + col + ';">' + s + str(c["ajustement_forensics"]) + '</span></p>'
+
     if c.get("ajustement_stacking") and c.get("ajustement_stacking") != 0:
         s = "+" if c["ajustement_stacking"] > 0 else ""
         col = "#4ade80" if c["ajustement_stacking"] > 0 else "#ef4444"
@@ -161,6 +162,7 @@ def bloc_candidat(c):
     out += rh
     out += '</div>'
     return out
+
 
 def bloc_visuel(r, sport):
     html = ''
@@ -212,12 +214,12 @@ def bloc_visuel(r, sport):
             else:
                 col = "#eab308"
             html += '<p>' + k + ' : ' + str(mo.get("open", 0)) + ' -> ' + str(mo.get("curr", 0)) + ' <span style="color:' + col + ';">' + str(mo.get("delta_pct", 0)) + '%</span></p>'
-        html += '<p>Pattern : <b>' + str(f.get("pattern", {}).get("pattern", "N/A")) + '</b></p>'
-        html += '<p>CLV pred. : ' + str(round(float(f.get("clv", {}).get("clv_predictif", 0)) * 100, 2)) + '%</p>'
-        html += '<p>Sharp Money : ' + str(f.get("sharp_money", {}).get("score", 0)) + ' (' + str(f.get("sharp_money", {}).get("label", "")) + ')</p>'
-        html += '<p>Efficience : ' + str(f.get("efficience", {}).get("efficience", 0)) + '</p>'
-        html += '<p style="color:' + str(sh.get("couleur", "#fff")) + ';font-size:16px;">⭐ SHARPE : ' + str(sh.get("sharpe_signal", 0)) + ' (' + str(sh.get("label", "")) + ')</p>'
-        html += '</div>'
+            html += '<p>Pattern : <b>' + str(f.get("pattern", {}).get("pattern", "N/A")) + '</b></p>'
+            html += '<p>CLV pred. : ' + str(round(float(f.get("clv", {}).get("clv_predictif", 0)) * 100, 2)) + '%</p>'
+            html += '<p>Sharp Money : ' + str(f.get("sharp_money", {}).get("score", 0)) + ' (' + str(f.get("sharp_money", {}).get("label", "")) + ')</p>'
+            html += '<p>Efficience : ' + str(f.get("efficience", {}).get("efficience", 0)) + '</p>'
+            html += '<p style="color:' + str(sh.get("couleur", "#fff")) + ';font-size:16px;">⭐ SHARPE : ' + str(sh.get("sharpe_signal", 0)) + ' (' + str(sh.get("label", "")) + ')</p>'
+            html += '</div>'
 
     s = r.get("stacking")
     if s and s.get("disponible"):
@@ -450,11 +452,11 @@ home_ctx = parse_matchs(form.get("home_contextuel", ""))
             None, None, None,
             q1, q2, q3, q4,
             o1, o2, c1, c2
-        )
+    )
 
-        html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
-        html += '<h1 style="color:#ffcc00;">Analyse Basketball</h1>'
-        html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
+html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>QFTE</title></head><body style="background:#0f0f1a;color:#eee;padding:20px;font-family:Arial;">'
+            html += '<h1 style="color:#ffcc00;">Analyse Basketball</h1>'
+            html += '<p>' + eq_dom + ' vs ' + eq_ext + ' (' + ligue + ')</p>'
 
         p = r.get("pari_retenu")
         if p:
@@ -478,18 +480,18 @@ home_ctx = parse_matchs(form.get("home_contextuel", ""))
             html += '<p>Aucune selection ne respecte les filtres V23.0.</p>'
             html += '</div>'
 
-html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
-        html += '<h2 style="color:#ffcc00;margin-top:0;">Points attendus (mu)</h2>'
-        html += '<p>' + eq_dom + ' : ' + str(r.get("mu_home", 0)) + '</p>'
-        html += '<p>' + eq_ext + ' : ' + str(r.get("mu_away", 0)) + '</p>'
-        html += '<p>Total FT : ' + str(r.get("mu_total", 0)) + '</p>'
-        html += '<p>Total 1H : ' + str(r.get("mu_total_1h", 0)) + '</p>'
-        html += '<p>Total 2H : ' + str(r.get("mu_total_2h", 0)) + '</p>'
-        html += '</div>'
+            html += '<div style="border:1px solid #262636;background:#14141f;padding:12px;border-radius:8px;margin-top:12px;">'
+            html += '<h2 style="color:#ffcc00;margin-top:0;">Points attendus (mu)</h2>'
+            html += '<p>' + eq_dom + ' : ' + str(r.get("mu_home", 0)) + '</p>'
+            html += '<p>' + eq_ext + ' : ' + str(r.get("mu_away", 0)) + '</p>'
+            html += '<p>Total FT : ' + str(r.get("mu_total", 0)) + '</p>'
+            html += '<p>Total 1H : ' + str(r.get("mu_total_1h", 0)) + '</p>'
+            html += '<p>Total 2H : ' + str(r.get("mu_total_2h", 0)) + '</p>'
+            html += '</div>'
 
-        html += bloc_visuel(r, "basketball")
+            html += bloc_visuel(r, "basketball")
 
-        html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Moneyline</h2>'
+            html += '<h2 style="color:#ffcc00;margin-top:20px;">Detail - Moneyline</h2>'
         if r.get("ml_candidats"):
             for c in r["ml_candidats"]:
                 html += bloc_candidat(c)
