@@ -537,6 +537,9 @@ if sport == "football":
         html += '</body></html>'
         
 
+            return HTMLResponse(content=html)
+
+
 @app.get("/historique", response_class=HTMLResponse)
 async def historique(request: Request):
     h = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Historique QFTE</title><style>'
