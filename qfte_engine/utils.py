@@ -11,7 +11,7 @@ def parse_matchs(t):
             r.append({"bp": int(mh.group(1)), "bc": int(mh.group(2)), "ht_bp": int(mh.group(3)), "ht_bc": int(mh.group(4))})
         elif ms:
             r.append({"bp": int(ms.group(1)), "bc": int(ms.group(2)), "ht_bp": None, "ht_bc": None})
-    return r
+    return r 
 
 def parse_hcp(t):
     r = []
@@ -85,7 +85,7 @@ def parse_quart(t):
                     resultat["ml"] = [float(p[0]), float(p[1])]
                 except:
                     pass
-    return resultat if resultat else None
+    return resultat if resultat else None 
 
 def ff(form, k, d=0.0):
     v = form.get(k, "")
